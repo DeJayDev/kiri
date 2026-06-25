@@ -69,9 +69,8 @@ loginctl enable-linger "$USER"
 journalctl --user -u kiri -f
 ```
 
-On WSL2, systemd can work, but WSL is not truly always-on. Scheduled jobs will
-not fire when Windows sleeps or WSL stops. For real persistence, run Kiri on a
-VPS, Pi, home server, or anything else that stays awake like an adult.
+For real persistence, run Kiri on a machine that stays awake, like a VPS, Pi, or
+home server.
 
 ## Commands
 
