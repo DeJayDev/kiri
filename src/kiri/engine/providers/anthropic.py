@@ -1,6 +1,6 @@
 import httpx
 
-from ... import config
+from kiri import config
 
 # The Messages API requires max_tokens. It's not a user-facing knob; this is a
 # generous ceiling for a non-streaming chat reply, not a budget to tune.

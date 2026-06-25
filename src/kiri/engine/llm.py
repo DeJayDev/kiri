@@ -1,4 +1,4 @@
-from . import providers
+from kiri.engine import providers
 
 
 async def complete(system, messages, tools):

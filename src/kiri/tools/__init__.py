@@ -1,5 +1,5 @@
-from ..scheduling import tool as scheduler
-from . import shell, web
+from kiri.scheduling import tool as scheduler
+from kiri.tools import shell, web
 
 
 class Registry:

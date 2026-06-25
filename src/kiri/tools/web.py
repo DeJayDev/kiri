@@ -1,6 +1,6 @@
 import httpx
 
-from .. import config
+from kiri import config
 
 _SEARCH = "https://api.exa.ai/search"
 _CONTENTS = "https://api.exa.ai/contents"

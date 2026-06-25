@@ -1,6 +1,6 @@
 import asyncio
 
-from .. import config
+from kiri import config
 
 SCHEMA = {
     "name": "shell",

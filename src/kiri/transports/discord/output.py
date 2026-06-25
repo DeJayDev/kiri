@@ -2,7 +2,7 @@ import io
 
 import discord
 
-from ... import config
+from kiri import config
 
 
 async def send(channel, text):

@@ -1,6 +1,6 @@
 import os
 
-from .. import config
+from kiri import config
 
 _DEFAULT = os.path.join(os.path.dirname(__file__), "default_prompt.md")
 

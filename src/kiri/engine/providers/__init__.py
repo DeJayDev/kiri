@@ -1,5 +1,5 @@
-from ... import config
-from . import anthropic, openai
+from kiri import config
+from kiri.engine.providers import anthropic, openai
 
 
 async def complete(system, messages, tools):

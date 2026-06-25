@@ -2,7 +2,7 @@ import json
 
 import httpx
 
-from ... import config
+from kiri import config
 
 
 def _endpoint():
