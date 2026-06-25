@@ -2,7 +2,7 @@
 
 Minimal, un-opinionated personal agent. Runs on the owner's machine, talks over
 Discord DM, does exactly what it's asked with whatever tools it's given. Not a
-coding agent. See `README.md` for setup and the full layout.
+coding agent. See `README.md` for user-facing setup.
 
 ## Hard constraints (do not break)
 
