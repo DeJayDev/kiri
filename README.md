@@ -10,10 +10,16 @@ Ships extensibility, not integrations.
 - Pluggable provider: `anthropic` and `openrouter` both speak the canonical
   Anthropic Messages format natively (no translation); `openai` translates for
   any OpenAI-compatible endpoint.
-- Discord DM transport, owner-only.
+- Discord DM transport, owner-only. Voice messages are transcribed on-device
+  (faster-whisper, optional `stt` extra) so speech-to-text costs nothing.
 - Capabilities: shell + your PATH binaries, web search/fetch (Exa), and any MCP
   servers you wire in. No baked-in app integrations.
-- Rolling-summary context per DM. Opt-in scheduled jobs. `stop` to abort a run.
+- Rolling-summary context per DM, persisted to sqlite so conversations survive a
+  restart. Opt-in recurring jobs and one-shot reminders. `stop` to abort a run.
+- Long-term memory is flat files under `~/.kiri/memory` — the agent reads and
+  writes them with the shell (`rg`/`cat`), no schema to learn. Global, private.
+- `kiri usage` prints the token tally. Harness state (sessions, jobs, usage) is
+  sqlite; only the agent-facing memory is flat files.
 - One hard rule baked into the engine: fail loud, never guess. Everything else
   lives in the (overridable) system prompt at `src/kiri/engine/default_prompt.md`.
 

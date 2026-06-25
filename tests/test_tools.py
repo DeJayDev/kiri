@@ -54,5 +54,41 @@ def test_schedule_tool_rejects_bad_cron():
     assert "invalid cron" in out
 
 
+class _FakeStore:
+    def __init__(self):
+        self.added = []
+
+    def add_once(self, when, instruction, channel_id):
+        self.added.append((when, instruction, channel_id))
+        return 7
+
+
+def _remind_runner(store):
+    return {schema["name"]: run for schema, run in scheduler.build(store, channel_id=1)}["remind"]
+
+
+def test_remind_rejects_past_time():
+    out = asyncio.run(_remind_runner(_FakeStore())({"when": "2000-01-01T00:00:00Z", "instruction": "x"}))
+    assert "past" in out
+
+
+def test_remind_rejects_unparseable_when():
+    out = asyncio.run(_remind_runner(_FakeStore())({"when": "soonish", "instruction": "x"}))
+    assert "couldn't parse" in out
+
+
+def test_remind_schedules_future():
+    store = _FakeStore()
+    out = asyncio.run(_remind_runner(store)({"when": "2999-01-01T00:00:00Z", "instruction": "ping"}))
+    assert "reminder 7" in out
+    assert store.added[0][1] == "ping"
+
+
+def test_parse_when_iso_and_epoch():
+    assert scheduler._parse_when("2999-01-01T00:00:00Z") is not None
+    assert scheduler._parse_when("1700000000") == 1700000000.0
+    assert scheduler._parse_when("garbage") is None
+
+
 def test_default_prompt_loads():
     assert "Kiri" in prompt.load()

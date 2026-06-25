@@ -29,7 +29,8 @@ def bind(path=None):
 
 
 class Job(_Base):
-    cron = peewee.TextField()
+    # cron is null for one-shot reminders, which fire once and self-delete.
+    cron = peewee.TextField(null=True)
     instruction = peewee.TextField()
     channel_id = peewee.IntegerField()
     next_run = peewee.FloatField()
@@ -37,3 +38,24 @@ class Job(_Base):
 
     class Meta:
         table_name = "jobs"
+
+
+class Conversation(_Base):
+    channel_id = peewee.IntegerField(primary_key=True)
+    messages = peewee.TextField()
+    summary = peewee.TextField()
+    pinned = peewee.TextField()
+    last_input_tokens = peewee.IntegerField()
+
+    class Meta:
+        table_name = "sessions"
+
+
+class UsageEvent(_Base):
+    ts = peewee.FloatField()
+    day = peewee.TextField()
+    input_tokens = peewee.IntegerField()
+    output_tokens = peewee.IntegerField()
+
+    class Meta:
+        table_name = "usage"

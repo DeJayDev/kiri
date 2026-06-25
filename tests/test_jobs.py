@@ -33,6 +33,16 @@ def test_future_job_not_due():
     assert store.due(time.time()) == []
 
 
+def test_one_shot_is_due_then_completes():
+    store = JobStore()
+    job_id = store.add_once(0, "ping", 5)  # next_run=0 -> already due
+    rows = store.list(5)
+    assert rows[0]["cron"] is None
+    assert [r["id"] for r in store.due(time.time())] == [job_id]
+    store.complete(job_id)
+    assert store.list(5) == []
+
+
 def test_due_and_reschedule_moves_next_run():
     store = JobStore()
     job_id = store.add("* * * * *", "tick", 1)

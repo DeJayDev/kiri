@@ -2,13 +2,17 @@ import platform
 import socket
 from datetime import datetime, timezone
 
-from .. import config
-from . import llm
+from kiri import config
+from kiri.engine import llm
 
 
 def runtime_context():
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    return f"Runtime: {now}, host {socket.gethostname()}, {platform.system()}."
+    return (
+        f"Runtime: {now}, host {socket.gethostname()}, {platform.system()}. "
+        f"Your long-term memory is flat files under {config.MEMORY_DIR}; "
+        "read and update it with the shell (rg, cat, write)."
+    )
 
 
 class Session:

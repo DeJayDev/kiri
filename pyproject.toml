@@ -15,6 +15,11 @@ dependencies = [
     "peewee>=4.1.0",
 ]
 
+[project.optional-dependencies]
+stt = [
+    "faster-whisper>=1.0.0",
+]
+
 [project.scripts]
 kiri = "kiri:main"
 

@@ -53,8 +53,18 @@ OWNER_ID = int(_owner) if _owner else None
 
 EXA_API_KEY = _get("EXA_API_KEY", None, "web", "exa_api_key")
 
+# Speech-to-text for Discord voice messages, run on-device (no per-use cost).
+# Needs the optional `stt` extra installed.
+STT_MODEL = _get("KIRI_STT_MODEL", "base", "stt", "model")
+STT_DEVICE = _get("KIRI_STT_DEVICE", "cpu", "stt", "device")
+STT_COMPUTE_TYPE = _get("KIRI_STT_COMPUTE_TYPE", "int8", "stt", "compute_type")
+STT_LANGUAGE = _get("KIRI_STT_LANGUAGE", None, "stt", "language") or None
+
 KIRI_HOME = os.path.expanduser(_get("KIRI_HOME", "~/.kiri", "paths", "home"))
 DB_PATH = os.path.expanduser(_get("KIRI_DB", os.path.join(KIRI_HOME, "kiri.db"), "paths", "db"))
+# Flat-file long-term memory the agent reads and writes with the shell (rg/cat).
+# Deliberately not sqlite: greppable beats a schema the agent has to introspect.
+MEMORY_DIR = os.path.expanduser(_get("KIRI_MEMORY_DIR", os.path.join(KIRI_HOME, "memory"), "paths", "memory"))
 MCP_CONFIG = os.path.expanduser(
     _get("KIRI_MCP_CONFIG", os.path.join(KIRI_HOME, "mcp.json"), "paths", "mcp_config")
 )
@@ -87,3 +97,4 @@ def require():
     if missing:
         raise SystemExit(f"Missing required config: {', '.join(missing)}")
     os.makedirs(KIRI_HOME, exist_ok=True)
+    os.makedirs(MEMORY_DIR, exist_ok=True)

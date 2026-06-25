@@ -1,12 +1,15 @@
-from . import llm
+from kiri.engine import llm
 
 
-async def run(session, user_text, registry):
+async def run(session, user_text, registry, on_usage=None):
     session.append_user(user_text)
 
     while True:
         data = await llm.complete(session.system(), session.messages, registry.schemas())
-        session.record_usage(data.get("usage", {}))
+        usage = data.get("usage", {})
+        session.record_usage(usage)
+        if on_usage:
+            on_usage(usage)
         content = data["content"]
         session.append_assistant(content)
 

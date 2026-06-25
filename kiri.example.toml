@@ -33,6 +33,18 @@ owner_id = 0
 # enables web_search / web_fetch; or env EXA_API_KEY
 exa_api_key = ""
 
+[stt]
+# On-device transcription of Discord voice messages. Needs the optional extra:
+# `uv sync --extra stt`. faster-whisper model size, e.g. tiny | base | small |
+# medium; append ".en" for an English-only variant (faster).
+model = "base"
+# cpu | cuda
+device = "cpu"
+# int8 is the fast CPU default; float16 suits cuda
+compute_type = "int8"
+# force a language code (e.g. "en"); leave empty to auto-detect
+# language = ""
+
 [context]
 compact_at = 0.75
 keep_recent = 6
@@ -40,6 +52,8 @@ keep_recent = 6
 [paths]
 home = "~/.kiri"
 # db = "~/.kiri/kiri.db"
+# flat-file long-term memory the agent reads/writes with the shell
+# memory = "~/.kiri/memory"
 # mcp_config = "~/.kiri/mcp.json"
 # override the baked system prompt
 # prompt_file = ""
