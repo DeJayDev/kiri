@@ -1,19 +1,20 @@
 import asyncio
 from contextlib import AsyncExitStack
 
-from . import config, mcp_client
-from .engine import conversation, prompt
-from .engine.context import Session
-from .engine.sessions import SessionStore
-from .scheduling.store import JobStore, run_scheduler
-from .transports.discord.client import Kiri
+from kiri import config, db, mcp_client
+from kiri.engine import conversation, prompt
+from kiri.engine.context import Session
+from kiri.engine.sessions import SessionStore
+from kiri.scheduling.store import JobStore, run_scheduler
+from kiri.transports.discord.client import Kiri
 
 
 async def start():
     config.require()
+    db.bind()
     base_prompt = prompt.load()
     sessions = SessionStore(base_prompt)
-    store = JobStore(config.DB_PATH)
+    store = JobStore()
 
     async with AsyncExitStack() as stack:
         mcp_tools = await mcp_client.load(config.MCP_CONFIG, stack)

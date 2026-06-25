@@ -1,9 +1,10 @@
 import asyncio
-import sqlite3
 import time
 from datetime import datetime, timezone
 
 from croniter import croniter
+
+from kiri.db import Job
 
 
 def _next_run(cron):
@@ -11,51 +12,30 @@ def _next_run(cron):
 
 
 class JobStore:
-    def __init__(self, path):
-        self.db = sqlite3.connect(path, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute(
-            """CREATE TABLE IF NOT EXISTS jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cron TEXT NOT NULL,
-                instruction TEXT NOT NULL,
-                channel_id INTEGER NOT NULL,
-                next_run REAL NOT NULL,
-                created REAL NOT NULL
-            )"""
-        )
-        self.db.commit()
-
     def add(self, cron, instruction, channel_id):
-        cur = self.db.execute(
-            "INSERT INTO jobs (cron, instruction, channel_id, next_run, created) VALUES (?,?,?,?,?)",
-            (cron, instruction, channel_id, _next_run(cron), time.time()),
-        )
-        self.db.commit()
-        return cur.lastrowid
+        return Job.create(
+            cron=cron,
+            instruction=instruction,
+            channel_id=channel_id,
+            next_run=_next_run(cron),
+            created=time.time(),
+        ).id
 
     def list(self, channel_id):
-        return self.db.execute(
-            "SELECT * FROM jobs WHERE channel_id=? ORDER BY id", (channel_id,)
-        ).fetchall()
+        return list(
+            Job.select().where(Job.channel_id == channel_id).order_by(Job.id).dicts()
+        )
 
     def delete(self, job_id, channel_id):
-        cur = self.db.execute(
-            "DELETE FROM jobs WHERE id=? AND channel_id=?", (job_id, channel_id)
+        return (
+            Job.delete().where((Job.id == job_id) & (Job.channel_id == channel_id)).execute() > 0
         )
-        self.db.commit()
-        return cur.rowcount > 0
 
     def due(self, now):
-        return self.db.execute(
-            "SELECT * FROM jobs WHERE next_run<=?", (now,)
-        ).fetchall()
+        return list(Job.select().where(Job.next_run <= now).dicts())
 
     def reschedule(self, job_id, cron):
-        self.db.execute(
-            "UPDATE jobs SET next_run=? WHERE id=?", (_next_run(cron), job_id)
-        )
-        self.db.commit()
+        Job.update(next_run=_next_run(cron)).where(Job.id == job_id).execute()
 
 
 async def run_scheduler(store, execute):
