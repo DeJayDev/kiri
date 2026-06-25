@@ -42,8 +42,8 @@ SCHEDULE_SCHEMA = {
 REMIND_SCHEMA = {
     "name": "remind",
     "description": (
-        "Set a one-shot reminder. At the given time the instruction runs once and "
-        "the result is delivered to this DM, then the reminder is deleted. You "
+        "Set a one-shot reminder. At the given time the instruction is delivered "
+        "to this DM as reminder text, then the reminder is deleted. You "
         "compute the absolute UTC time from whatever the user said (e.g. 'in 10 "
         "minutes', 'tomorrow 9am') and pass it here."
     ),
@@ -54,7 +54,10 @@ REMIND_SCHEMA = {
                 "type": "string",
                 "description": "Absolute time: ISO 8601 UTC (e.g. '2026-06-26T09:00:00Z') or epoch seconds.",
             },
-            "instruction": {"type": "string", "description": "What to run when it fires."},
+            "instruction": {
+                "type": "string",
+                "description": "Short reminder text to deliver when it fires.",
+            },
         },
         "required": ["when", "instruction"],
     },
