@@ -1,98 +1,200 @@
 # Kiri
 
-A minimal, un-opinionated personal agent. Runs on your machine, talks to you
-over Discord DM, does exactly what you ask using whatever tools you give it.
-Ships extensibility, not integrations.
+Kiri is a minimal personal agent that runs on your machine and talks to you over Discord DM. It is intentionally un-opinionated: one owner, one model, the tools you choose, and no baked-in SaaS integrations.
 
-## What it is
+It is not a coding agent framework or a cloud service. It is a small harness for giving a private agent access to your shell, web search, MCP servers, reminders, and flat-file memory.
 
-- Raw, hand-rolled model loop (no Anthropic SDK). One model you choose.
-- Pluggable provider: `anthropic` and `openrouter` both speak the canonical
-  Anthropic Messages format natively (no translation); `openai` translates for
-  any OpenAI-compatible endpoint.
-- Discord DM transport, owner-only. Voice messages are transcribed on-device
-  (faster-whisper, optional `stt` extra) so speech-to-text costs nothing.
-- Capabilities: shell + your PATH binaries, web search/fetch (Exa), and any MCP
-  servers you wire in. No baked-in app integrations.
-- Rolling-summary context per DM, persisted to sqlite so conversations survive a
-  restart. Opt-in recurring jobs and one-shot reminders. `stop` to abort a run.
-- Long-term memory is flat files under `~/.kiri/memory` — the agent reads and
-  writes them with the shell (`rg`/`cat`), no schema to learn. Global, private.
-- `kiri usage` prints the token tally. Harness state (sessions, jobs, usage) is
-  sqlite; only the agent-facing memory is flat files.
-- One hard rule baked into the engine: fail loud, never guess. Everything else
-  lives in the (overridable) system prompt at `src/kiri/engine/default_prompt.md`.
+## What you get
 
-## Setup
+- Owner-only Discord DM interface. Kiri ignores every other user and channel.
+- Hand-rolled model loop over `httpx`; no `anthropic` SDK and no Anthropic server-side tools.
+- Providers for Anthropic, OpenRouter, and OpenAI-compatible chat endpoints.
+- Shell access through your local `PATH`, Exa-backed `web_search` / `web_fetch`, and any MCP servers you configure.
+- Optional on-device transcription for Discord voice messages with `faster-whisper`.
+- Rolling conversation context stored in sqlite, so DM sessions survive restarts.
+- Recurring cron jobs and one-shot reminders, driven by the same conversation engine as live DMs.
+- Long-term memory as plain files under `~/.kiri/memory`, read and written by the agent with normal shell tools.
+- Token usage accounting with `kiri usage`.
+
+The engine has one hard-coded behavior rule: fail loud, never guess. If a request is ambiguous or a tool errors, Kiri surfaces that instead of silently inventing a workaround. Everything else lives in the overridable system prompt at `src/kiri/engine/default_prompt.md`.
+
+## Requirements
+
+- Python `>=3.14`
+- [`uv`](https://docs.astral.sh/uv/)
+- A Discord bot token with Message Content Intent enabled
+- A model provider key for Anthropic, OpenRouter, or an OpenAI-compatible endpoint
+- Optional: an Exa API key for web tools
+
+## Quick start
 
 ```sh
-cp kiri.example.toml kiri.toml     # fill it in
+git clone https://github.com/DeJayDev/kiri.git
+cd kiri
+cp kiri.example.toml kiri.toml
 uv sync
 uv run kiri
 ```
 
-Config is TOML, looked up at `$KIRI_CONFIG`, then `~/.kiri/config.toml`, then
-`./kiri.toml`. **Any value can be overridden by an environment variable** (env
-wins), so secrets can stay in your shell's `.env` while the rest lives in the
-file. See `kiri.example.toml` for every key.
+Then fill in `kiri.toml` with:
 
-Required: a provider api key (matching `[model] provider`), `[discord] token`,
-and `[discord] owner_id`. Optional: `[web] exa_api_key` for the web tools.
+- `[model] provider` and `name`
+- the matching provider API key
+- `[discord] token`
+- `[discord] owner_id`
+- optional `[web] exa_api_key`
 
-**Provider:** set `[model] provider`. For OpenRouter, use a model slug like
-`anthropic/claude-3.7-sonnet` and put the key in `[providers.openrouter]`
-(or `OPENROUTER_API_KEY`).
+For voice-message transcription:
 
-**Discord:** create a bot, enable the **Message Content Intent** in the developer
-portal, and DM it from the account whose id is `owner_id`. It ignores everyone
-and everywhere else.
+```sh
+uv sync --extra stt
+```
 
-**MCP:** point `[paths] mcp_config` at a JSON file shaped like `mcp.example.json`.
+## Configuration
+
+Kiri loads config in this order:
+
+1. `$KIRI_CONFIG`
+2. `~/.kiri/config.toml`
+3. `./kiri.toml`
+
+Environment variables override TOML values, so secrets can live in your shell or `.env` while the rest stays in `kiri.toml`. See `kiri.example.toml` and `.env.example` for the full key list.
+
+Common provider setups:
+
+```toml
+[model]
+provider = "anthropic"
+name = "claude-opus-4-8"
+
+[providers.anthropic]
+api_key = ""
+```
+
+```toml
+[model]
+provider = "openrouter"
+name = "anthropic/claude-3.7-sonnet"
+
+[providers.openrouter]
+api_key = ""
+```
+
+```toml
+[model]
+provider = "openai"
+name = "gpt-4.1"
+
+[providers.openai]
+api_key = ""
+base_url = ""
+```
+
+## Discord setup
+
+1. Create a Discord application and bot in the developer portal.
+2. Enable **Message Content Intent** for the bot.
+3. Invite the bot somewhere it can receive your DMs.
+4. Set `[discord] token` to the bot token.
+5. Set `[discord] owner_id` to your numeric Discord user ID.
+
+Kiri only responds to that owner ID. Everyone else is ignored.
+
+## Tools and MCP
+
+Kiri ships with a small default tool surface:
+
+- `shell`: run commands on the host machine
+- `web_search` and `web_fetch`: Exa-backed web tools, enabled when `EXA_API_KEY` or `[web] exa_api_key` is set
+- scheduling tools for recurring jobs and one-shot reminders
+
+To add MCP servers, point `[paths] mcp_config` or `KIRI_MCP_CONFIG` at a JSON file shaped like `mcp.example.json`:
+
+```json
+{
+  "servers": {
+    "todoist": {
+      "command": "npx",
+      "args": ["-y", "@some/todoist-mcp"],
+      "env": { "TODOIST_API_KEY": "..." }
+    }
+  }
+}
+```
 
 ## Running persistently
 
-It's a long-running process (the in-process scheduler only fires while it's up),
-so put it under a supervisor. On a normal always-on Linux box, a systemd **user**
-service is the move — see `deploy/kiri.service`:
+Kiri is a long-running process. The in-process scheduler only fires while it is running, so use a supervisor for reminders and recurring jobs.
+
+On a normal always-on Linux machine, use the systemd user service in `deploy/kiri.service`:
 
 ```sh
+mkdir -p ~/.config/systemd/user
 cp deploy/kiri.service ~/.config/systemd/user/kiri.service
+# edit WorkingDirectory and EnvironmentFile if your checkout is not ~/empty
 systemctl --user daemon-reload
 systemctl --user enable --now kiri
-loginctl enable-linger "$USER"     # survive having no login session
-journalctl --user -u kiri -f       # logs
+loginctl enable-linger "$USER"
+journalctl --user -u kiri -f
 ```
 
-On **WSL2** (your case): systemd works if you set `systemd=true` under `[boot]`
-in `/etc/wsl.conf`, but WSL is not truly always-on — it stops when Windows sleeps
-or the last session closes, so scheduled jobs won't fire then. For real
-persistence, host Kiri on something that stays up (a VPS, a Pi, a home server).
-`tmux`/`nohup` work for a quick run but won't restart on crash or reboot.
+On WSL2, systemd works if you set `systemd=true` under `[boot]` in `/etc/wsl.conf`, but WSL is not truly always-on. It stops when Windows sleeps or the last session closes, so scheduled jobs will not fire then. For real persistence, run Kiri on something that stays up, like a VPS, Raspberry Pi, or home server.
 
-## Layout
+## Day-to-day commands
 
+```sh
+uv run kiri          # start the Discord bot
+uv run kiri usage    # print token usage
+uv run pytest -q     # run tests
 ```
+
+When a run is in progress, send `stop` in DM to abort it.
+
+## Project layout
+
+```text
 src/kiri/
-  app.py              startup wiring (the only place layers meet)
-  config.py
-  mcp_client.py       loads developer MCP servers (mcp SDK)
-  engine/             the brain: no outside I/O
-    llm.py            facade over the providers + text helper
-    providers/        anthropic.py, openai.py (openrouter/openai-compatible)
-    agent.py          the tool-use loop
-    context.py        per-DM session + rolling summarization
+  app.py              startup wiring; the only place layers meet
+  config.py           TOML + environment config
+  db.py               sqlite binding
+  mcp_client.py       developer MCP server loading
+  usage.py            token tally reporting
+  engine/             provider-agnostic conversation engine
+    agent.py          tool-use loop
+    context.py        rolling summary context
+    conversation.py   shared run_turn() path for DMs and jobs
+    default_prompt.md baked, overridable behavior prompt
+    llm.py            provider facade
+    providers/        Anthropic, OpenAI, OpenRouter-compatible clients
     sessions.py       one rolling session per channel
-    conversation.py   run_turn(): shared path for DMs and jobs
-    prompt.py
-    default_prompt.md  the baked, overridable behavior
-  transports/         how you reach it (pluggable)
-    discord/
-      client.py       gateway, owner gate, interrupt, typing
-      output.py       rendering: chunk-or-file
-  tools/              capabilities
+  transports/
+    discord/          gateway, owner gate, interrupt, output rendering
+  tools/
     shell.py
-    web.py            Exa search + fetch
-  scheduling/         durable jobs, one concern
-    store.py          sqlite store + in-process scheduler
-    tool.py           schedule / list / cancel tools
+    web.py            Exa search and fetch
+  scheduling/
+    store.py          durable sqlite jobs + in-process scheduler
+    tool.py           schedule, list, and cancel tools
 ```
+
+Harness state such as sessions, jobs, and usage lives in sqlite at `DB_PATH`. Agent-facing long-term memory is deliberately separate: flat files under `MEMORY_DIR`, usually `~/.kiri/memory`.
+
+## Development
+
+```sh
+uv sync
+uv run pytest -q
+```
+
+Optional STT dependencies:
+
+```sh
+uv sync --extra stt
+```
+
+Design constraints worth preserving:
+
+- Keep `engine/` provider-agnostic and free of outside I/O.
+- Do not add a `max_tokens` config setting.
+- Do not commit `kiri.toml`, `.env`, `*.db`, or MCP files containing credentials.
+- Keep comments in example config files above the lines they describe.
