@@ -22,16 +22,7 @@ async def start():
         bot = Kiri(sessions, store, mcp_tools)
 
         async def execute(job):
-            # Jobs run in a fresh, standalone session so they never pollute the
-            # live DM conversation.
-            session = Session(job["channel_id"], base_prompt)
-            try:
-                reply = await conversation.run_turn(
-                    session, job["instruction"], store, mcp_tools, on_usage=usage.record
-                )
-            except Exception as exc:
-                reply = f"job error: {exc}"
-            await bot.deliver(job["channel_id"], reply)
+            await execute_job(job, base_prompt, store, mcp_tools, bot, on_usage=usage.record)
 
         async def supervised_scheduler():
             # A crash in the scheduler would otherwise die silently in its task;
@@ -45,3 +36,20 @@ async def start():
 
         asyncio.create_task(supervised_scheduler())
         await bot.start(config.DISCORD_BOT_TOKEN)
+
+
+async def execute_job(job, base_prompt, store, mcp_tools, bot, on_usage=None):
+    if job["cron"] is None:
+        await bot.deliver(job["channel_id"], f"Reminder: {job['instruction']}")
+        return
+
+    # Jobs run in a fresh, standalone session so they never pollute the live DM
+    # conversation.
+    session = Session(job["channel_id"], base_prompt)
+    try:
+        reply = await conversation.run_turn(
+            session, job["instruction"], store, mcp_tools, on_usage=on_usage
+        )
+    except Exception as exc:
+        reply = f"job error: {exc}"
+    await bot.deliver(job["channel_id"], reply)
