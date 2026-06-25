@@ -1,0 +1,27 @@
+[project]
+name = "kiri"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Dj Isaac", email = "contact@dejaydev.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "croniter>=6.2.2",
+    "discord-py>=2.7.1",
+    "httpx>=0.28.1",
+    "mcp>=1.28.0",
+]
+
+[project.scripts]
+kiri = "kiri:main"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

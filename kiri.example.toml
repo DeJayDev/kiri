@@ -1,0 +1,45 @@
+# Copy to one of: ./kiri.toml, ~/.kiri/config.toml, or $KIRI_CONFIG.
+# Any value here can be overridden by an environment variable (env wins), so you
+# can keep secrets in your shell's .env and the rest in this file.
+
+[model]
+# anthropic | openrouter | openai
+provider = "anthropic"
+# for openrouter use a slug, e.g. "anthropic/claude-3.7-sonnet"
+name = "claude-opus-4-8"
+context_window = 200000
+
+[providers.anthropic]
+# or env ANTHROPIC_API_KEY
+api_key = ""
+
+[providers.openrouter]
+# or env OPENROUTER_API_KEY
+api_key = ""
+
+[providers.openai]
+# or env OPENAI_API_KEY
+api_key = ""
+# optional, for any OpenAI-compatible endpoint
+base_url = ""
+
+[discord]
+# or env DISCORD_BOT_TOKEN
+token = ""
+# your numeric Discord user id
+owner_id = 0
+
+[web]
+# enables web_search / web_fetch; or env EXA_API_KEY
+exa_api_key = ""
+
+[context]
+compact_at = 0.75
+keep_recent = 6
+
+[paths]
+home = "~/.kiri"
+# db = "~/.kiri/kiri.db"
+# mcp_config = "~/.kiri/mcp.json"
+# override the baked system prompt
+# prompt_file = ""

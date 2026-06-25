@@ -1,0 +1,25 @@
+# systemd user service. Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/kiri.service ~/.config/systemd/user/kiri.service
+#   # edit WorkingDirectory below if the repo isn't at ~/empty
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now kiri
+#   loginctl enable-linger "$USER"     # keep it running with no login session
+# Logs: journalctl --user -u kiri -f
+
+[Unit]
+Description=Kiri personal agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/empty
+ExecStart=%h/.local/bin/uv run kiri
+Restart=always
+RestartSec=5
+# Optional: load secrets from a .env file (KEY=VALUE per line)
+EnvironmentFile=-%h/empty/.env
+
+[Install]
+WantedBy=default.target

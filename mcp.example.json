@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "todoist": {
+      "command": "npx",
+      "args": ["-y", "@some/todoist-mcp"],
+      "env": { "TODOIST_API_KEY": "..." }
+    }
+  }
+}
