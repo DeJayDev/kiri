@@ -4,54 +4,80 @@ Minimal, un-opinionated personal agent. Runs on the owner's machine, talks over
 Discord DM, does exactly what it's asked with whatever tools it's given. Not a
 coding agent. See `README.md` for user-facing setup.
 
+The code is small and readable; infer the structure from it. This file is only
+the things the code does *not* make obvious — the rules that are easy to break
+and the decisions that look like bugs but aren't.
+
 ## Hard constraints (do not break)
 
-- **No `anthropic` SDK** — the model loop is hand-rolled over `httpx`. The `mcp`
-  SDK is fine; it's how developer MCP servers are loaded.
+- **No `anthropic` SDK.** The model loop is hand-rolled over `httpx`. The `mcp`
+  SDK is fine — it's how developer MCP servers are loaded.
 - **No Anthropic server-side tools** (web search/fetch, etc.). Web search/fetch
   is our own code against Exa.
-- **One engine rule is non-negotiable: fail loud, never guess.** On ambiguity or
-  a tool error, stop and surface the real error. Don't silently retry or paper
-  over failures. Everything else about behavior lives in the overridable prompt.
-- **Never commit secrets.** `kiri.toml`, `.env`, `*.db`, `mcp.json` are
-  gitignored and carry real credentials. Don't read or stage them.
+- **Fail loud, never guess.** On ambiguity or a tool error, stop and surface the
+  real error. No silent retries, no papering over failures. This is the one
+  engine invariant; everything else about behavior lives in the overridable
+  prompt (`engine/default_prompt.md`).
+- **No `max_tokens` setting.** Deliberately removed. The Anthropic Messages API
+  requires the field, so `providers/anthropic.py` hardcodes a ceiling — that is
+  not a budget knob, don't promote it back into config.
+- **Never read or commit secrets.** `kiri.toml`, `.env`, `*.db`, `mcp.json` are
+  gitignored and hold real credentials.
 
-## Architecture
+## Gotchas (these will waste your time)
 
-- Internal message shape is **Anthropic content blocks** (`tool_use` /
-  `tool_result` / `text`) everywhere. `engine/` is provider-agnostic and does no
-  outside I/O.
-- Providers: `anthropic` and `openrouter` speak the canonical Anthropic Messages
-  format natively (no translation); `openrouter` just swaps the endpoint + auth
-  header. `openai` translates to/from `/chat/completions`.
-- `engine/conversation.py:run_turn` is the single path shared by live DMs and
-  scheduled jobs.
-- `app.py` is the only place the layers are wired together.
-- **Storage split:** harness state (sessions, jobs, usage) lives in sqlite at
-  `DB_PATH`; the agent never reads it. Agent-facing long-term memory is flat
-  files under `MEMORY_DIR` (`~/.kiri/memory`) — the model uses the shell on it
-  (`rg`/`cat`/write), no schema. Don't put agent memory in sqlite.
-- Scheduling: recurring = cron jobs; one-shot = reminders (nullable `cron`,
-  self-delete after firing). The model parses NL time into an absolute UTC
-  timestamp; the `remind` tool only takes the timestamp.
-- Usage tokens are recorded via an `on_usage` sink threaded through `run_turn`,
-  so the engine stays import-pure. `kiri usage` reads the tally back out.
+- **OpenRouter goes through `providers/anthropic.py`, not `openai.py`.** It
+  exposes a native Anthropic Messages endpoint, so it reuses that provider with
+  only a different URL + auth header. `openai.py` is exclusively for OpenAI and
+  OpenAI-compatible `base_url` endpoints. The names are misleading; the routing
+  is intentional.
+- **Internal message shape is Anthropic content blocks everywhere** (`tool_use`
+  / `tool_result` / `text`). Only `openai.py` translates, at the edge. Don't let
+  OpenAI-style shapes leak into `engine/`, and keep `engine/` free of outside
+  I/O.
+- **Compaction must cut on a real user turn.** `context.py:_safe_cut` walks the
+  boundary back so the retained tail never starts with an orphan `tool_result`
+  (the API rejects a `tool_result` that doesn't follow its `tool_use`). If you
+  touch summarization/compaction, preserve that pairing or runs start failing
+  only once a conversation is long enough to compact.
+- **The scheduler is coarse and reminders self-delete.** `run_scheduler` polls
+  every ~20s, so jobs fire within ~20s of their time, not on the second.
+  Reminders are jobs with a null `cron`; they fire once and delete themselves.
+  Don't assume exact timing or persistent reminders.
+- **Natural-language time parsing is the model's job, not the tool's.** The
+  `remind` tool only accepts an absolute UTC/ISO time or epoch seconds; `cron`
+  is 5-field UTC. Keep NL time parsing in the prompt/model, not in the tool.
+- **Any new DM cancels the in-flight run.** `transports/discord/client.py`
+  cancels the running task on every message; `stop`/`cancel` are reserved words
+  handled before dispatch. One owner only — non-owner and non-DM messages are
+  dropped silently.
+- **Agent memory is flat files, never sqlite.** Sqlite (`DB_PATH`) is
+  harness-only state (sessions, jobs, usage) and the agent never reads it.
+  Long-term agent memory lives under `MEMORY_DIR` so the model can `rg`/`cat`/
+  write it with the shell. Don't move agent memory into the database.
+- **STT is a lazy, optional singleton.** `faster-whisper` is heavy, so it's
+  imported and loaded on first voice message and cached process-wide. It decodes
+  OGG/Opus itself via bundled PyAV — don't add an ffmpeg shell-out. A missing
+  extra surfaces as a clear install hint, not a crash.
+- **DB tables auto-register.** Every `_Base` subclass appends itself via
+  `__init_subclass__`, and `bind()` creates them all. There is no hand-written
+  table list to update when you add a model.
 
 ## Conventions
 
-- Config: TOML with env override (env > TOML > default), via `config._get`.
-  There is **no `max_tokens` setting** — deliberately removed; don't add one.
-- In example config files, comments go **above** the line they describe, never
-  trailing.
+- Config resolution is env > TOML > default, via `config._get`. In example
+  config files, comments go **above** the line they describe, never trailing.
 - Style: early returns, top-to-bottom, small functions, no docstrings, comment
   only non-obvious logic. Plain-text output, no emojis.
+- Tests use no `pytest-asyncio`; drive coroutines with `asyncio.run`. The DB is
+  bound to a tmp file per test (see `tests/conftest.py`).
 
 ## Commands
 
 ```sh
 uv sync                 # core deps
 uv sync --extra stt     # + on-device voice transcription (faster-whisper)
-uv run pytest -q        # tests (no pytest-asyncio; use asyncio.run)
+uv run pytest -q        # tests
 uv run kiri             # boot the bot
 uv run kiri usage       # token tally (reads sqlite, separate process)
 ```
