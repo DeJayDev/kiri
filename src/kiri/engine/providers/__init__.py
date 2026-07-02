@@ -1,8 +1,10 @@
+from typing import Any
+
 from kiri import config
 from kiri.engine.providers import anthropic, openai
 
 
-async def complete(system, messages, tools):
+async def complete(system, messages, tools) -> dict[str, Any]:
     # Internal message/content shape is Anthropic-canonical. anthropic + openrouter
     # speak it natively (no translation); the openai provider translates to/from
     # OpenAI chat format for any OpenAI-compatible endpoint.

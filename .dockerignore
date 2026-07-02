@@ -1,0 +1,6 @@
+.git
+.env
+kiri.toml
+mcp.json
+*.db
+.venv

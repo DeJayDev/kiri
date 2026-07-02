@@ -18,6 +18,11 @@ class SessionStore:
         self._sessions[channel_id] = session
         return session
 
+    def drop(self, channel_id):
+        # Forget the in-memory session; the next get() reloads the last saved
+        # state, discarding any half-finished turn.
+        self._sessions.pop(channel_id, None)
+
     def _load(self, channel_id):
         row = Conversation.get_or_none(Conversation.channel_id == channel_id)
         if row is None:

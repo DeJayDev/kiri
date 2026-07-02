@@ -29,6 +29,8 @@ def bind(path=None):
 
 
 class Job(_Base):
+    # Explicit so type checkers see the primary key peewee would add anyway.
+    id = peewee.AutoField()
     # cron is null for one-shot reminders, which fire once and self-delete.
     cron = peewee.TextField(null=True)
     instruction = peewee.TextField()
@@ -52,6 +54,7 @@ class Conversation(_Base):
 
 
 class UsageEvent(_Base):
+    id = peewee.AutoField()
     ts = peewee.FloatField()
     day = peewee.TextField()
     input_tokens = peewee.IntegerField()

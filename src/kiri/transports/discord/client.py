@@ -26,9 +26,10 @@ class Kiri(discord.Client):
         self.store = store
         self.mcp_tools = mcp_tools
         self.tasks = {}
+        self.pending = {}
 
     async def on_message(self, message):
-        if message.author.id == self.user.id:
+        if message.author == self.user:
             return
         if not isinstance(message.channel, discord.DMChannel):
             return
@@ -37,16 +38,32 @@ class Kiri(discord.Client):
 
         channel_id = message.channel.id
         running = self.tasks.get(channel_id)
-        if running and not running.done():
-            running.cancel()  # any new message aborts the in-flight run
-
         text = message.content.strip()
+
         if text.lower() in {"stop", "cancel"}:
+            # Clear in place: the drain loop holds a reference to this list, so
+            # popping the dict entry wouldn't stop queued turns from running.
+            queue = self.pending.get(channel_id)
+            if queue:
+                queue.clear()
+            if running and not running.done():
+                running.cancel()
             await message.channel.send("stopped.")
             return
 
         voice = _voice_attachment(message)
-        self.tasks[channel_id] = asyncio.create_task(self._handle(message, text, voice))
+        if running and not running.done():
+            # A message during a run is a follow-up, not an interrupt; it runs
+            # as its own turn once the current one finishes.
+            self.pending.setdefault(channel_id, []).append((message, text, voice))
+            return
+        self.tasks[channel_id] = asyncio.create_task(self._drain(message, text, voice))
+
+    async def _drain(self, message, text, voice):
+        queue = self.pending.setdefault(message.channel.id, [])
+        queue.append((message, text, voice))
+        while queue:
+            await self._handle(*queue.pop(0))
 
     async def _handle(self, message, text, voice):
         channel = message.channel
@@ -57,22 +74,28 @@ class Kiri(discord.Client):
                 if voice:
                     text = await stt.transcribe(await voice.read())
                     if not text:
-                        await output.send(channel, "couldn't make out any speech in that voice message.")
+                        await output.send(
+                            channel, "couldn't make out any speech in that voice message."
+                        )
                         return
                     # Echo the transcription so the user can see what was understood.
                     await channel.send(f"heard: {text}")
                 reply = await conversation.run_turn(
                     session, text, self.store, self.mcp_tools, on_usage=usage.record
                 )
+            self.sessions.save(session)
+            await output.send(channel, reply)
         except asyncio.CancelledError:
+            # Swallowed on purpose: cancel aborts this turn, not the drain loop,
+            # so a follow-up sent mid-cancel still gets served. The half-finished
+            # turn is discarded so its instruction never leaks into history.
+            self.sessions.drop(channel.id)
             return
         except Exception as exc:
             await output.send(channel, f"error: {exc}")
             return
         finally:
             slow.cancel()
-        self.sessions.save(session)
-        await output.send(channel, reply)
 
     async def _slow_note(self, channel, delay=20):
         await asyncio.sleep(delay)

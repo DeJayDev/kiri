@@ -15,7 +15,7 @@ def _load_model():
     if _model is not None:
         return _model
     try:
-        from faster_whisper import WhisperModel
+        from faster_whisper import WhisperModel  # pyright: ignore[reportMissingImports]
     except ImportError:
         raise RuntimeError(
             "voice messages need the STT extra. install it with "

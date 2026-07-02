@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import httpx
 
@@ -12,7 +13,7 @@ def _endpoint():
     return f"{base}/chat/completions", config.OPENAI_API_KEY
 
 
-def _to_messages(system, messages):
+def _to_messages(system, messages) -> list[dict[str, Any]]:
     out = [{"role": "system", "content": system}]
     for m in messages:
         content = m["content"]
@@ -53,7 +54,7 @@ def _to_messages(system, messages):
     return out
 
 
-def _to_tools(tools):
+def _to_tools(tools) -> list[dict[str, Any]] | None:
     if not tools:
         return None
     return [

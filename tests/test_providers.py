@@ -74,6 +74,7 @@ def test_to_messages_tool_only_assistant_has_null_content():
 
 def test_to_tools_shape_and_none():
     out = openai._to_tools([{"name": "shell", "description": "d", "input_schema": {"type": "object"}}])
+    assert out is not None
     assert out[0]["type"] == "function"
     assert out[0]["function"]["name"] == "shell"
     assert out[0]["function"]["parameters"] == {"type": "object"}

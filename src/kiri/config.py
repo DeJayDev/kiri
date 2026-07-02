@@ -1,5 +1,6 @@
 import os
 import tomllib
+from typing import Any
 
 # Config source is a TOML file; environment variables override any value (so
 # secrets can live in the shell's .env instead of the file). Resolution order:
@@ -18,7 +19,7 @@ def _load_toml():
 _toml, CONFIG_PATH = _load_toml()
 
 
-def _dig(data, keys):
+def _dig(data, keys) -> Any:
     for key in keys:
         if not isinstance(data, dict):
             return None
@@ -26,7 +27,7 @@ def _dig(data, keys):
     return data
 
 
-def _get(env, default, *toml_keys):
+def _get(env, default, *toml_keys) -> Any:
     if env and os.environ.get(env) is not None:
         return os.environ[env]
     value = _dig(_toml, toml_keys)
@@ -48,8 +49,8 @@ OPENAI_API_KEY = _get("OPENAI_API_KEY", None, "providers", "openai", "api_key")
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", None, "providers", "openai", "base_url")
 
 DISCORD_BOT_TOKEN = _get("DISCORD_BOT_TOKEN", None, "discord", "token")
-_owner = _get("KIRI_OWNER_ID", None, "discord", "owner_id")
-OWNER_ID = int(_owner) if _owner else None
+# 0 means unset; require() rejects it.
+OWNER_ID = int(_get("KIRI_OWNER_ID", 0, "discord", "owner_id") or 0)
 
 EXA_API_KEY = _get("EXA_API_KEY", None, "web", "exa_api_key")
 

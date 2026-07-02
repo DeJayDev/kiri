@@ -1,9 +1,12 @@
+from typing import Any
+
 import httpx
 
 from kiri import config
 
 _SEARCH = "https://api.exa.ai/search"
 _CONTENTS = "https://api.exa.ai/contents"
+_FETCH_CAP = 50000
 
 SEARCH_SCHEMA = {
     "name": "web_search",
@@ -32,7 +35,7 @@ FETCH_SCHEMA = {
 }
 
 
-async def _post(url, body):
+async def _post(url, body) -> tuple[Any, str | None]:
     if not config.EXA_API_KEY:
         return None, "error: EXA_API_KEY not set"
     headers = {"x-api-key": config.EXA_API_KEY, "content-type": "application/json"}
@@ -71,7 +74,6 @@ async def fetch(args):
     if not results:
         return "no content"
     text = results[0].get("text", "")
-    cap = 50000
-    if len(text) > cap:
-        text = text[:cap] + "\n...[truncated]..."
+    if len(text) > _FETCH_CAP:
+        text = text[:_FETCH_CAP] + "\n...[truncated]..."
     return text
