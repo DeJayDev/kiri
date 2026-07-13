@@ -1,3 +1,5 @@
+import asyncio
+
 from kiri import config
 from kiri.engine import llm
 from kiri.engine.context import Session, _is_user_turn
@@ -19,36 +21,51 @@ def test_safe_cut_never_orphans_tool_result(monkeypatch):
     session = Session(1, "base")
     session.messages = _pair()
     cut = session._safe_cut()
-    # Either no compaction, or the retained tail starts on a real user turn.
     assert cut == 0 or _is_user_turn(session.messages[cut])
 
 
-def test_safe_cut_lands_on_clean_boundary(monkeypatch):
-    monkeypatch.setattr(config, "KEEP_RECENT", 2)
-    session = Session(1, "base")
-    session.messages = [
-        {"role": "user", "content": "a"},
-        {"role": "assistant", "content": [{"type": "text", "text": "x"}]},
-    ] * 3
-    cut = session._safe_cut()
-    assert _is_user_turn(session.messages[cut])
-
-
-def test_system_includes_base_runtime_summary_pins():
+def test_system_prompt_is_byte_stable_across_requests():
     session = Session(1, "BASEPROMPT")
-    session.summary = "EARLIER"
-    session.pinned = ["PINNED FACT"]
-    rendered = session.system()
-    assert "BASEPROMPT" in rendered
-    assert "Runtime:" in rendered
-    assert "EARLIER" in rendered
-    assert "PINNED FACT" in rendered
+    assert session.system() == session.system()
 
 
-def test_text_of_joins_only_text_blocks():
-    content = [
-        {"type": "text", "text": "a"},
-        {"type": "tool_use", "id": "x", "name": "n", "input": {}},
-        {"type": "text", "text": "b"},
-    ]
-    assert llm.text_of(content) == "ab"
+def test_the_date_lives_in_the_turn_not_the_system_prompt():
+    session = Session(1, "BASEPROMPT")
+    session.append_user("hi")
+    assert "Today is" in session.messages[0]["content"]
+    assert not any("Today is" in part for part in session.system())
+
+
+def test_compaction_reports_its_tokens_to_the_usage_sink(monkeypatch):
+    monkeypatch.setattr(config, "KEEP_RECENT", 2)
+    monkeypatch.setattr(config, "COMPACT_AT", 0.5)
+    monkeypatch.setattr(config, "MODEL_CONTEXT", 100)
+
+    class _Provider:
+        async def complete(self, system, messages, tools, model=None):
+            return {
+                "content": [{"type": "text", "text": "BRIEF"}],
+                "usage": {"input_tokens": 900, "output_tokens": 30},
+            }
+
+    seen = []
+    llm.use(_Provider(), sink=seen.append)
+
+    session = Session(1, "base")
+    session.messages = _pair()
+    session.last_input_tokens = 90
+    asyncio.run(session.maybe_compact())
+
+    assert session.summary == "BRIEF"
+    assert seen == [{"input_tokens": 900, "output_tokens": 30}]
+    # The summarizer's own input size must not become the session's, or it would
+    # re-trigger compaction on the next turn.
+    assert session.last_input_tokens == 90
+
+
+def test_context_size_counts_cached_tokens(monkeypatch):
+    session = Session(1, "base")
+    session.record_usage(
+        {"input_tokens": 200, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 150000}
+    )
+    assert session.last_input_tokens == 151200

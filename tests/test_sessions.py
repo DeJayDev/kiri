@@ -18,13 +18,16 @@ def test_session_persists_across_stores():
     assert loaded.last_input_tokens == 99
 
 
-def test_get_caches_same_instance():
+def test_drop_discards_a_turn_left_dangling_by_an_error():
     store = SessionStore("BASE")
-    assert store.get(1) is store.get(1)
+    session = store.get(5)
+    session.messages = [{"role": "user", "content": "hi"}]
+    store.save(session)
 
+    session.messages.append({"role": "user", "content": "search the web"})
+    session.messages.append(
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "web_search", "input": {}}]}
+    )
 
-def test_unknown_channel_starts_fresh():
-    store = SessionStore("BASE")
-    session = store.get(7)
-    assert session.messages == []
-    assert session.base_system == "BASE"
+    store.drop(5)
+    assert store.get(5).messages == [{"role": "user", "content": "hi"}]

@@ -6,13 +6,16 @@ from kiri import config
 from kiri.engine import llm
 
 
-def runtime_context():
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def environment():
     return (
-        f"Runtime: {now}, host {socket.gethostname()}, {platform.system()}. "
+        f"Host {socket.gethostname()}, {platform.system()}. "
         f"Your long-term memory is flat files under {config.MEMORY_DIR}; "
         "read and update it with the shell (rg, cat, write)."
     )
+
+
+def _today():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 class Session:
@@ -25,15 +28,17 @@ class Session:
         self.last_input_tokens = 0
 
     def system(self):
-        parts = [self.base_system, runtime_context()]
+        # Ordered segments, stable first. A caching provider breakpoints the last
+        # one, so nothing per-request may appear here.
+        parts = [self.base_system, environment()]
         if self.pinned:
             parts.append("Pinned by the user:\n" + "\n".join(self.pinned))
         if self.summary:
             parts.append("Summary of earlier conversation:\n" + self.summary)
-        return "\n\n".join(parts)
+        return parts
 
     def append_user(self, text):
-        self.messages.append({"role": "user", "content": text})
+        self.messages.append({"role": "user", "content": f"{text}\n\nToday is {_today()} (UTC)."})
 
     def append_assistant(self, content):
         self.messages.append({"role": "assistant", "content": content})
@@ -42,7 +47,15 @@ class Session:
         self.messages.append({"role": "user", "content": results})
 
     def record_usage(self, usage):
-        self.last_input_tokens = usage.get("input_tokens", self.last_input_tokens)
+        # input_tokens is only the uncached remainder; on its own it reports a full
+        # context as tiny and compaction never fires.
+        total = (
+            usage.get("input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0)
+            + usage.get("cache_read_input_tokens", 0)
+        )
+        if total:
+            self.last_input_tokens = total
 
     async def maybe_compact(self):
         if self.last_input_tokens < config.COMPACT_AT * config.MODEL_CONTEXT:
@@ -56,9 +69,8 @@ class Session:
         self.summary = await self._summarize(old)
 
     def _safe_cut(self):
-        # Keep the last KEEP_RECENT messages, then walk the boundary back to a
-        # real user turn so the retained tail never starts with an orphan
-        # tool_result (which must follow its assistant tool_use).
+        # Walk back to a real user turn: the retained tail must not start on an
+        # orphan tool_result, which has to follow its assistant tool_use.
         cut = len(self.messages) - config.KEEP_RECENT
         while cut > 0 and not _is_user_turn(self.messages[cut]):
             cut -= 1
@@ -73,7 +85,9 @@ class Session:
             "No preamble, no commentary."
         )
         messages = [{"role": "user", "content": f"{prior}{instruction}\n\n{transcript}"}]
-        data = await llm.complete(instruction, messages, None)
+        # Deliberately not record_usage(): this call's input size is the
+        # pre-compaction transcript, which would immediately re-trigger compaction.
+        data = await llm.summarize(instruction, messages, model=config.SUMMARY_MODEL)
         return llm.text_of(data["content"])
 
 

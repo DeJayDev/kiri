@@ -19,15 +19,24 @@ def record(usage):
         day=day,
         input_tokens=usage.get("input_tokens", 0),
         output_tokens=usage.get("output_tokens", 0),
+        cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
+        cache_read_tokens=usage.get("cache_read_input_tokens", 0),
     )
+
+
+def _sum(field):
+    # COALESCE because rows written before the cache columns existed are null.
+    return peewee.fn.COALESCE(peewee.fn.SUM(field), 0)
 
 
 def tally():
     rows = (
         UsageEvent.select(
             UsageEvent.day,
-            peewee.fn.SUM(UsageEvent.input_tokens),
-            peewee.fn.SUM(UsageEvent.output_tokens),
+            _sum(UsageEvent.input_tokens),
+            _sum(UsageEvent.cache_write_tokens),
+            _sum(UsageEvent.cache_read_tokens),
+            _sum(UsageEvent.output_tokens),
             peewee.fn.COUNT(UsageEvent.id),
         )
         .group_by(UsageEvent.day)
@@ -37,16 +46,34 @@ def tally():
     return list(rows)
 
 
+_WIDTHS = (12, 12, 12, 12, 12, 8)
+
+
+def _row(day, *cells):
+    widths = iter(_WIDTHS)
+    out = f"{day:<{next(widths)}}"
+    return out + "".join(f"{cell:>{w}}" for cell, w in zip(cells, widths))
+
+
+def _numbers(row):
+    return _row(row[0], *(f"{n:,}" for n in row[1:]))
+
+
 def print_tally():
     rows = tally()
     if not rows:
         print("no usage recorded yet")
         return
-    print(f"{'day':<12}{'input':>14}{'output':>14}{'calls':>9}")
-    total_in = total_out = total_calls = 0
-    for day, input_tokens, output_tokens, calls in rows:
-        print(f"{day:<12}{input_tokens:>14,}{output_tokens:>14,}{calls:>9,}")
-        total_in += input_tokens
-        total_out += output_tokens
-        total_calls += calls
-    print(f"{'total':<12}{total_in:>14,}{total_out:>14,}{total_calls:>9,}")
+
+    print(_row("day", "input", "cache w", "cache r", "output", "calls"))
+    totals = [0, 0, 0, 0, 0]
+    for row in rows:
+        print(_numbers(row))
+        for i, value in enumerate(row[1:]):
+            totals[i] += value
+    print(_numbers(("total", *totals)))
+
+    cached = totals[2]
+    prompt_tokens = totals[0] + totals[1] + cached
+    if prompt_tokens:
+        print(f"\ncache hit rate: {cached / prompt_tokens:.0%} of prompt tokens served from cache")
