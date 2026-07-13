@@ -2,27 +2,37 @@ import asyncio
 import traceback
 from contextlib import AsyncExitStack
 
-from kiri import config, db, mcp_client, usage
-from kiri.engine import conversation, prompt
+from kiri import config, db, http, mcp_client, transports, usage
+from kiri.engine import conversation, llm, prompt, providers
 from kiri.engine.context import Session
+from kiri.engine.providers.base import AuthRequired
 from kiri.engine.sessions import SessionStore
 from kiri.scheduling.store import JobStore, run_scheduler
-from kiri.transports.discord.client import Kiri
+from kiri.tools.reload import Restart
+from kiri.turns import Dispatcher
 
 
 async def start():
     config.require()
     db.bind()
+
+    chat = providers.build(config.PROVIDER)
+    summarizer = providers.build(config.SUMMARY_PROVIDER) if config.SUMMARY_PROVIDER else chat
+    llm.use(chat, summarizer, sink=usage.record)
+
     base_prompt = prompt.load()
     sessions = SessionStore(base_prompt)
     store = JobStore()
 
     async with AsyncExitStack() as stack:
+        stack.push_async_callback(http.aclose)
         mcp_tools = await mcp_client.load(config.MCP_CONFIG, stack)
-        bot = Kiri(sessions, store, mcp_tools)
+
+        transport = transports.build(config.TRANSPORT)
+        dispatcher = Dispatcher(transport, sessions, store, mcp_tools)
 
         async def execute(job):
-            await execute_job(job, base_prompt, store, mcp_tools, bot, on_usage=usage.record)
+            await execute_job(job, base_prompt, store, mcp_tools, dispatcher)
 
         async def supervised_scheduler():
             # A crash in the scheduler would otherwise die silently in its task;
@@ -32,24 +42,41 @@ async def start():
             except asyncio.CancelledError:
                 raise
             except Exception:
-                await bot.notify_owner(f"scheduler crashed:\n{traceback.format_exc()}")
+                await transport.notify_owner(f"scheduler crashed:\n{traceback.format_exc()}")
 
-        asyncio.create_task(supervised_scheduler())
-        await bot.start(config.DISCORD_BOT_TOKEN)
+        scheduler = asyncio.create_task(supervised_scheduler())
+        try:
+            await transport.run(dispatcher.on_message)
+        finally:
+            scheduler.cancel()
 
 
-async def execute_job(job, base_prompt, store, mcp_tools, bot, on_usage=None):
+async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
+    transport = dispatcher.transport
     if job["cron"] is None:
-        await bot.deliver(job["channel_id"], f"Reminder: {job['instruction']}")
+        await transport.send(job["channel_id"], f"Reminder: {job['instruction']}")
         return
 
-    # Jobs run in a fresh, standalone session so they never pollute the live DM
-    # conversation.
-    session = Session(job["channel_id"], base_prompt)
+    async def turn():
+        # A fresh session per job, so it never pollutes the live DM conversation --
+        # which is also why the retry below needs no rollback.
+        session = Session(job["channel_id"], base_prompt)
+        return await conversation.run_turn(session, job["instruction"], store, mcp_tools)
+
     try:
-        reply = await conversation.run_turn(
-            session, job["instruction"], store, mcp_tools, on_usage=on_usage
-        )
+        reply = await turn()
+    except Restart:
+        # A job has no owner watching, and restarting mid-turn would drop whatever
+        # else is in flight. Reload is a live-conversation action.
+        reply = "job error: reload is not available in a scheduled job; ask me in the DM"
+    except AuthRequired as exc:
+        # A job firing while the owner is asleep waits out the device code's expiry
+        # and then fails: it never hangs, and never fires hours stale.
+        try:
+            await dispatcher.reauth(job["channel_id"], exc.provider)
+            reply = await turn()
+        except Exception as retry_error:
+            reply = f"job error: {retry_error}"
     except Exception as exc:
         reply = f"job error: {exc}"
-    await bot.deliver(job["channel_id"], reply)
+    await transport.send(job["channel_id"], reply)
