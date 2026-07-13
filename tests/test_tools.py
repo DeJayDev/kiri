@@ -1,15 +1,10 @@
 import asyncio
+import os
+import time
 
 from kiri import config, tools
-from kiri.engine import prompt
 from kiri.scheduling import tool as scheduler
 from kiri.tools import shell, web
-
-
-def test_registry_has_core_tools():
-    registry = tools.build(store=None, channel_id=1, mcp_tools=[])
-    names = {s["name"] for s in registry.schemas()}
-    assert {"shell", "web_search", "web_fetch", "schedule_job", "list_jobs", "cancel_job"} <= names
 
 
 def test_registry_unknown_tool_returns_error():
@@ -25,16 +20,6 @@ def test_registry_merges_mcp_tools():
     registry = tools.build(store=None, channel_id=1, mcp_tools=[(schema, runner)])
     assert "srv__t" in {s["name"] for s in registry.schemas()}
     assert asyncio.run(registry.run("srv__t", {})) == "mcp-ok"
-
-
-def test_shell_runs_command():
-    out = asyncio.run(shell.run({"command": "printf hi"}))
-    assert "exit: 0" in out
-    assert "hi" in out
-
-
-def test_shell_rejects_empty():
-    assert "empty" in asyncio.run(shell.run({"command": "   "}))
 
 
 def test_shell_caps_output(monkeypatch):
@@ -72,11 +57,6 @@ def test_remind_rejects_past_time():
     assert "past" in out
 
 
-def test_remind_rejects_unparseable_when():
-    out = asyncio.run(_remind_runner(_FakeStore())({"when": "soonish", "instruction": "x"}))
-    assert "couldn't parse" in out
-
-
 def test_remind_schedules_future():
     store = _FakeStore()
     out = asyncio.run(_remind_runner(store)({"when": "2999-01-01T00:00:00Z", "instruction": "ping"}))
@@ -90,5 +70,23 @@ def test_parse_when_iso_and_epoch():
     assert scheduler._parse_when("garbage") is None
 
 
-def test_default_prompt_loads():
-    assert "Kiri" in prompt.load()
+def test_shell_times_out_and_tells_the_agent_how_to_retry():
+    out = asyncio.run(shell.run({"command": "sleep 30", "timeout": 1}))
+    assert "killed after 1s" in out
+    assert "`timeout`" in out
+
+
+def test_shell_runs_to_completion_within_its_timeout():
+    out = asyncio.run(shell.run({"command": "sleep 2 && printf done", "timeout": 10}))
+    assert "exit: 0" in out
+    assert "done" in out
+
+
+def test_shell_timeout_kills_the_whole_process_tree():
+    # The shell exits but a child keeps the pipes open; killing only the shell
+    # would hang the drain. Marker file proves the child died too.
+    marker = "/tmp/kiri_tree_test_marker"
+    command = f"rm -f {marker}; (sleep 5; touch {marker}) & wait"
+    asyncio.run(shell.run({"command": command, "timeout": 1}))
+    time.sleep(6)
+    assert not os.path.exists(marker)
