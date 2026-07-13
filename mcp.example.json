@@ -4,6 +4,9 @@
       "command": "npx",
       "args": ["-y", "@some/todoist-mcp"],
       "env": { "TODOIST_API_KEY": "..." }
+    },
+    "linear": {
+      "url": "https://mcp.linear.app/mcp"
     }
   }
 }
