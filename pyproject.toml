@@ -8,16 +8,17 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "croniter>=6.2.2",
+    "croniter>=6.2.4",
     "discord-py>=2.7.1",
     "httpx>=0.28.1",
-    "mcp>=1.28.0",
-    "peewee>=4.1.0",
+    "mcp>=1.28.1",
+    "peewee>=4.2.2",
+    "tenacity>=9.1.4",
 ]
 
 [project.optional-dependencies]
 stt = [
-    "faster-whisper>=1.0.0",
+    "faster-whisper>=1.2.1",
 ]
 
 [project.scripts]

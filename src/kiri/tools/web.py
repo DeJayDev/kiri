@@ -1,8 +1,6 @@
 from typing import Any
 
-import httpx
-
-from kiri import config
+from kiri import config, http
 
 _SEARCH = "https://api.exa.ai/search"
 _CONTENTS = "https://api.exa.ai/contents"
@@ -39,8 +37,7 @@ async def _post(url, body) -> tuple[Any, str | None]:
     if not config.EXA_API_KEY:
         return None, "error: EXA_API_KEY not set"
     headers = {"x-api-key": config.EXA_API_KEY, "content-type": "application/json"}
-    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-        resp = await client.post(url, headers=headers, json=body)
+    resp = await http.request("POST", url, headers=headers, json=body, timeout=60.0)
     if resp.status_code != 200:
         return None, f"error: Exa {resp.status_code}: {resp.text}"
     return resp.json(), None

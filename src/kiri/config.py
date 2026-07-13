@@ -34,9 +34,13 @@ def _get(env, default, *toml_keys) -> Any:
     return value if value is not None else default
 
 
+TRANSPORT = _get("KIRI_TRANSPORT", "discord", "transport", "name").lower()
+
 PROVIDER = _get("KIRI_PROVIDER", "anthropic", "model", "provider").lower()
 MODEL = _get("KIRI_MODEL", "claude-opus-4-8", "model", "name")
 MODEL_CONTEXT = int(_get("KIRI_MODEL_CONTEXT", 200000, "model", "context_window"))
+SUMMARY_MODEL = _get("KIRI_SUMMARY_MODEL", None, "model", "summary_model") or None
+SUMMARY_PROVIDER = _get("KIRI_SUMMARY_PROVIDER", None, "model", "summary_provider") or None
 
 # Rolling summarization: compact when an exchange's input tokens exceed
 # COMPACT_AT of the context window; keep the last KEEP_RECENT turns verbatim.
@@ -47,6 +51,10 @@ ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY", None, "providers", "anthropic", "a
 OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY", None, "providers", "openrouter", "api_key")
 OPENAI_API_KEY = _get("OPENAI_API_KEY", None, "providers", "openai", "api_key")
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", None, "providers", "openai", "base_url")
+
+# No default: baking in another product's client_id means impersonating it.
+XAI_CLIENT_ID = _get("XAI_CLIENT_ID", None, "providers", "xai", "client_id")
+XAI_API_KEY = _get("XAI_API_KEY", None, "providers", "xai", "api_key")
 
 DISCORD_BOT_TOKEN = _get("DISCORD_BOT_TOKEN", None, "discord", "token")
 # 0 means unset; require() rejects it.
@@ -69,32 +77,36 @@ MEMORY_DIR = os.path.expanduser(_get("KIRI_MEMORY_DIR", os.path.join(KIRI_HOME, 
 MCP_CONFIG = os.path.expanduser(
     _get("KIRI_MCP_CONFIG", os.path.join(KIRI_HOME, "mcp.json"), "paths", "mcp_config")
 )
+# OAuth tokens, rewritten on every refresh. Never hand-edited, never committed.
+CREDENTIALS_PATH = os.path.expanduser(
+    _get("KIRI_CREDENTIALS", os.path.join(KIRI_HOME, "credentials.json"), "paths", "credentials")
+)
 PROMPT_FILE = _get("KIRI_PROMPT_FILE", None, "paths", "prompt_file") or None
 
-DISCORD_LIMIT = 2000
 SHELL_OUTPUT_CAP = 30000
-
-_PROVIDER_KEYS = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "openai": "OPENAI_API_KEY",
-}
-
-
-def provider_key():
-    return globals().get(_PROVIDER_KEYS.get(PROVIDER, ""))
 
 
 def require():
+    # Imported here, not at module scope: both import config.
+    from kiri import transports
+    from kiri.engine import providers
+
     missing = []
-    if PROVIDER not in _PROVIDER_KEYS:
-        raise SystemExit(f"Unknown provider '{PROVIDER}' (use: {', '.join(_PROVIDER_KEYS)})")
-    if not provider_key():
-        missing.append(f"{PROVIDER} api key")
-    if not DISCORD_BOT_TOKEN:
-        missing.append("discord token")
-    if not OWNER_ID:
-        missing.append("discord owner_id")
+    for name in {PROVIDER, SUMMARY_PROVIDER} - {None}:
+        if name not in providers.PROVIDERS:
+            known = ", ".join(providers.PROVIDERS)
+            raise SystemExit(f"Unknown provider '{name}' (use: {known})")
+        gap = providers.PROVIDERS[name]().missing()
+        if gap:
+            missing.append(gap)
+
+    if TRANSPORT not in transports.TRANSPORTS:
+        known = ", ".join(sorted(transports.TRANSPORTS))
+        raise SystemExit(f"Unknown transport '{TRANSPORT}' (use: {known})")
+    gap = transports.TRANSPORTS[TRANSPORT].missing()
+    if gap:
+        missing.append(gap)
+
     if missing:
         raise SystemExit(f"Missing required config: {', '.join(missing)}")
     os.makedirs(KIRI_HOME, exist_ok=True)
