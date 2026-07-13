@@ -1,59 +1,61 @@
-# Copy to one of: ./kiri.toml, ~/.kiri/config.toml, or $KIRI_CONFIG.
-# Any value here can be overridden by an environment variable (env wins), so you
-# can keep secrets in your shell's .env and the rest in this file.
+# Copy to ./kiri.toml, ~/.kiri/config.toml, or $KIRI_CONFIG.
+# Env vars override every value.
+
+[transport]
+# discord | terminal
+name = "discord"
 
 [model]
-# anthropic | openrouter | openai
+# anthropic | openrouter | openai | xai
 provider = "anthropic"
-# for openrouter use a slug, e.g. "anthropic/claude-3.7-sonnet"
+# an exact provider model id; xai serves an alias as a different model
 name = "claude-opus-4-8"
 context_window = 200000
+# summary_model = "claude-haiku-4-5"
+# summary_provider = "anthropic"
 
 [providers.anthropic]
-# or env ANTHROPIC_API_KEY
 api_key = ""
 
 [providers.openrouter]
-# or env OPENROUTER_API_KEY
 api_key = ""
 
 [providers.openai]
-# or env OPENAI_API_KEY
 api_key = ""
-# optional, for any OpenAI-compatible endpoint
-base_url = ""
+# base_url = ""
+
+[providers.xai]
+# oauth against your SuperGrok / X Premium+ subscription: `kiri auth login xai`,
+# or just talk to kiri and it posts a device code. public desktop client id, no
+# secret; kiri ships no default so a revoked id fails loudly.
+client_id = ""
+# fallback only. xai allowlists its oauth api surface separately from the
+# subscription and can 403 a valid account. never used automatically.
+api_key = ""
 
 [discord]
-# or env DISCORD_BOT_TOKEN
 token = ""
-# your numeric Discord user id
 owner_id = 0
 
 [web]
-# enables web_search / web_fetch; or env EXA_API_KEY
+# enables web_search / web_fetch
 exa_api_key = ""
-
-[stt]
-# On-device transcription of Discord voice messages. Needs the optional extra:
-# `uv sync --extra stt`. faster-whisper model size, e.g. tiny | base | small |
-# medium; append ".en" for an English-only variant (faster).
-model = "base"
-# cpu | cuda
-device = "cpu"
-# int8 is the fast CPU default; float16 suits cuda
-compute_type = "int8"
-# force a language code (e.g. "en"); leave empty to auto-detect
-# language = ""
 
 [context]
 compact_at = 0.75
 keep_recent = 6
 
+[stt]
+# on-device voice transcription. needs `uv sync --extra stt`.
+model = "base"
+device = "cpu"
+compute_type = "int8"
+# language = "en"
+
 [paths]
 home = "~/.kiri"
 # db = "~/.kiri/kiri.db"
-# flat-file long-term memory the agent reads/writes with the shell
 # memory = "~/.kiri/memory"
 # mcp_config = "~/.kiri/mcp.json"
-# override the baked system prompt
+# credentials = "~/.kiri/credentials.json"
 # prompt_file = ""
