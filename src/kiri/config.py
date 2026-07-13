@@ -27,11 +27,30 @@ def _dig(data, keys) -> Any:
     return data
 
 
+_read = set()
+
+
 def _get(env, default, *toml_keys) -> Any:
+    _read.add(toml_keys)
     if env and os.environ.get(env) is not None:
         return os.environ[env]
     value = _dig(_toml, toml_keys)
     return value if value is not None else default
+
+
+def _paths(data, prefix=()):
+    for key, value in data.items():
+        path = (*prefix, key)
+        if isinstance(value, dict):
+            yield from _paths(value, path)
+        else:
+            yield path
+
+
+def stale():
+    # Every setting reaches the code through _get, so a key it never asks for is a
+    # key nothing reads -- a setting the owner believes is in effect and isn't.
+    return sorted(path for path in _paths(_toml) if path not in _read)
 
 
 TRANSPORT = _get("KIRI_TRANSPORT", "discord", "transport", "name").lower()
@@ -90,6 +109,9 @@ def require():
     # Imported here, not at module scope: both import config.
     from kiri import transports
     from kiri.engine import providers
+
+    for path in stale():
+        print(f"warning: {CONFIG_PATH} sets {'.'.join(path)}, which kiri does not read")
 
     missing = []
     for name in {PROVIDER, SUMMARY_PROVIDER} - {None}:

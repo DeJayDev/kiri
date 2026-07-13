@@ -16,6 +16,21 @@ def test_get_precedence_env_over_toml_over_default(monkeypatch):
     assert config._get("KIRI_MODEL", "default", "model", "name") == "default"
 
 
+def test_stale_finds_settings_nothing_reads(monkeypatch):
+    # A key kiri dropped stays in the file and silently stops doing anything. The
+    # owner has no way to tell it went dead.
+    monkeypatch.setattr(
+        config,
+        "_toml",
+        {
+            "shell": {"timeout": 120, "max_timeout": 3600},
+            "model": {"name": "claude-opus-4-8"},
+            "providers": {"anthropic": {"api_key": "k"}},
+        },
+    )
+    assert config.stale() == [("shell", "max_timeout"), ("shell", "timeout")]
+
+
 def test_require_asks_the_provider_what_it_needs(monkeypatch):
     monkeypatch.setattr(config, "PROVIDER", "openrouter")
     monkeypatch.setattr(config, "SUMMARY_PROVIDER", None)
