@@ -1,5 +1,5 @@
 from kiri.scheduling import tool as scheduler
-from kiri.tools import shell, web
+from kiri.tools import reload, shell, web
 
 
 class Registry:
@@ -25,6 +25,7 @@ def build(store, channel_id, mcp_tools):
     # a shared list of (schema, runner) loaded once at startup.
     registry = Registry()
     registry.add(shell.SCHEMA, shell.run)
+    registry.add(reload.SCHEMA, reload.run)
     registry.add(web.SEARCH_SCHEMA, web.search)
     registry.add(web.FETCH_SCHEMA, web.fetch)
     for schema, runner in scheduler.build(store, channel_id):
