@@ -18,3 +18,4 @@ kiri.toml
 mcp.json
 *.db
 .kiri/
+credentials.json
