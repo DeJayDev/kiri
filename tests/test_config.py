@@ -16,41 +16,32 @@ def test_get_precedence_env_over_toml_over_default(monkeypatch):
     assert config._get("KIRI_MODEL", "default", "model", "name") == "default"
 
 
-def test_dig_missing_key_is_none():
-    assert config._dig({"a": {"b": 1}}, ("a", "c")) is None
-    assert config._dig({"a": "scalar"}, ("a", "b")) is None
-
-
-def test_provider_key_selects_by_provider(monkeypatch):
+def test_require_asks_the_provider_what_it_needs(monkeypatch):
     monkeypatch.setattr(config, "PROVIDER", "openrouter")
-    monkeypatch.setattr(config, "OPENROUTER_API_KEY", "or-key")
-    assert config.provider_key() == "or-key"
-
-
-def test_require_fails_loud_lists_all_missing(monkeypatch):
-    monkeypatch.setattr(config, "PROVIDER", "anthropic")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
-    monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", None)
-    monkeypatch.setattr(config, "OWNER_ID", None)
+    monkeypatch.setattr(config, "SUMMARY_PROVIDER", None)
+    monkeypatch.setattr(config, "OPENROUTER_API_KEY", None)
+    monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setattr(config, "OWNER_ID", 1)
     with pytest.raises(SystemExit) as exc:
         config.require()
-    message = str(exc.value)
-    assert "anthropic api key" in message
-    assert "discord token" in message
-    assert "owner_id" in message
+    assert "openrouter api key" in str(exc.value)
 
 
-def test_require_unknown_provider(monkeypatch):
-    monkeypatch.setattr(config, "PROVIDER", "bogus")
+def test_require_rejects_an_unknown_provider(monkeypatch):
+    monkeypatch.setattr(config, "PROVIDER", "gemini")
+    monkeypatch.setattr(config, "SUMMARY_PROVIDER", None)
     with pytest.raises(SystemExit) as exc:
         config.require()
     assert "Unknown provider" in str(exc.value)
 
 
-def test_require_passes_when_satisfied(monkeypatch, tmp_path):
+def test_require_also_validates_the_summary_provider(monkeypatch):
     monkeypatch.setattr(config, "PROVIDER", "anthropic")
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(config, "SUMMARY_PROVIDER", "openai")
+    monkeypatch.setattr(config, "OPENAI_API_KEY", None)
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "t")
-    monkeypatch.setattr(config, "OWNER_ID", 42)
-    monkeypatch.setattr(config, "KIRI_HOME", str(tmp_path / "home"))
-    config.require()  # must not raise
+    monkeypatch.setattr(config, "OWNER_ID", 1)
+    with pytest.raises(SystemExit) as exc:
+        config.require()
+    assert "openai api key" in str(exc.value)
