@@ -1,8 +1,3 @@
-import asyncio
-import platform
-import subprocess
-from urllib.parse import parse_qs, urlparse
-
 from mcp import ClientSession
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.streamable_http import streamable_http_client
@@ -10,6 +5,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 
 from kiri import credentials
+from kiri.oauth import Loopback, open_browser
 
 
 def key(name):
@@ -70,73 +66,13 @@ def runtime_provider(name, url):
     )
 
 
-class _Loopback:
-    # MCP is authorization-code + PKCE, so unlike xAI's device flow the browser
-    # needs somewhere to land.
-    def __init__(self):
-        self.result = asyncio.get_running_loop().create_future()
-        self.server = None
-
-    async def start(self):
-        self.server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
-        port = self.server.sockets[0].getsockname()[1]
-        return f"http://127.0.0.1:{port}/callback"
-
-    async def _handle(self, reader, writer):
-        line = (await reader.readline()).decode()
-        target = line.split(" ")[1] if " " in line else "/"
-        params = parse_qs(urlparse(target).query)
-        code = params.get("code", [None])[0]
-        error = params.get("error", [None])[0]
-
-        # Anything with neither is not the callback: a favicon fetch, a browser
-        # preconnect probe, a port scan. Answer 404 and keep waiting -- resolving
-        # the future here would fail a login the owner is about to complete.
-        if not code and not error:
-            await self._respond(writer, "404 Not Found", "kiri: not the oauth callback")
-            return
-
-        if error:
-            await self._respond(writer, "400 Bad Request", f"kiri: authorization failed ({error})")
-        else:
-            await self._respond(writer, "200 OK", "kiri: authorized, close this tab.")
-
-        if self.result.done():
-            return
-        if code:
-            self.result.set_result((code, params.get("state", [None])[0]))
-        else:
-            self.result.set_exception(RuntimeError(f"mcp: authorization denied ({error})"))
-
-    async def _respond(self, writer, status, body):
-        writer.write(
-            f"HTTP/1.1 {status}\r\ncontent-type: text/plain\r\n"
-            f"content-length: {len(body)}\r\n\r\n{body}".encode()
-        )
-        await writer.drain()
-        writer.close()
-
-    async def close(self):
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-
-
-def _open_browser(url):
-    opener = "open" if platform.system() == "Darwin" else "xdg-open"
-    try:
-        subprocess.run([opener, url], check=False, capture_output=True)
-    except FileNotFoundError:
-        pass  # headless: the printed url is the fallback
-
-
 async def login(name, url):
-    loopback = _Loopback()
+    loopback = Loopback()
     redirect_uri = await loopback.start()
 
     async def redirect_handler(auth_url):
         print(f"opening browser:\n  {auth_url}")
-        _open_browser(auth_url)
+        open_browser(auth_url)
 
     provider = OAuthClientProvider(
         server_url=url,

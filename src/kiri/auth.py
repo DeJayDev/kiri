@@ -2,9 +2,17 @@ import asyncio
 import json
 import os
 
-from kiri import config, credentials, http, mcp_auth
+from kiri import config, credentials, http, mcp_auth, oauth
 from kiri.engine import providers
 from kiri.login import login as do_login
+
+
+def _plugin_clients():
+    # Importing the tools package is what constructs each plugin's OAuth, which is
+    # what registers it in oauth.CLIENTS.
+    import kiri.tools  # noqa: F401
+
+    return oauth.CLIENTS
 
 
 def run(args):
@@ -66,8 +74,22 @@ def status():
 
         print(f"{marker} {name:<12}{state}")
 
+    for name, client in sorted(_plugin_clients().items()):
+        gap = client.missing()
+        state = credentials.describe(oauth.key(name)) if not gap else f"not configured ({gap})"
+        print(f"  {name:<12}{state}")
+
 
 def login(name):
+    client = _plugin_clients().get(name)
+    if client:
+        asyncio.run(_oauth_login(client))
+        return
+
+    if name not in providers.PROVIDERS:
+        known = ", ".join([*providers.PROVIDERS, *_plugin_clients()])
+        raise SystemExit(f"unknown provider or plugin '{name}' (use: {known})")
+
     provider = providers.build(name)
     if not hasattr(provider, "begin_login"):
         raise SystemExit(f"{name} uses an api key, not a login. set it in kiri.toml or the env.")
@@ -81,6 +103,14 @@ async def _login(provider):
     try:
         await do_login(provider, say)
         print(f"token saved to {config.CREDENTIALS_PATH}")
+    finally:
+        await http.aclose()
+
+
+async def _oauth_login(client):
+    try:
+        await client.login()
+        print(f"{client.name} authorized. token saved to {config.CREDENTIALS_PATH}")
     finally:
         await http.aclose()
 
