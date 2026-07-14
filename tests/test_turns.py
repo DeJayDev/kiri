@@ -43,13 +43,30 @@ def rig(monkeypatch):
     transport = _Transport()
     sessions = _Sessions()
     dispatcher = turns.Dispatcher(transport, sessions, store=None, mcp_tools=[])
-    # The 20s "working on it..." timer would otherwise linger past each test.
-    monkeypatch.setattr(dispatcher, "_slow_note", lambda channel, delay=20: asyncio.sleep(3600))
     return dispatcher, transport, sessions
 
 
 def _msg(text):
     return Inbound(channel_id=1, text=text)
+
+
+def test_a_slow_turn_says_it_is_still_alive(rig, monkeypatch):
+    # The owner cannot see the agent loop. A long turn that says nothing is
+    # indistinguishable from a hung one.
+    dispatcher, transport, _ = rig
+    slept = []
+
+    async def instant(delay):
+        slept.append(delay)
+        if len(slept) > 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", instant)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(dispatcher._slow_note(1))
+
+    assert slept[:2] == [60, 300]
+    assert transport.sent == ["still working (1m).", "still working (6m)."]
 
 
 def test_a_turn_runs_and_the_session_is_saved(rig, monkeypatch):
@@ -205,7 +222,7 @@ def test_reload_never_persists_the_poisoned_turn(rig, monkeypatch):
     monkeypatch.setattr(turns.reload, "restart", lambda: restarted.append(True))
 
     asyncio.run(_run(dispatcher, "reload yourself"))
-    assert transport.sent == ["reloading..."]
+    assert transport.sent == ["reloading."]
     assert sessions.dropped == [1]
     assert sessions.saved == []
     assert restarted == [True]

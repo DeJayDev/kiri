@@ -69,9 +69,7 @@ class Dispatcher:
                 if inbound.audio:
                     text = await stt.transcribe(inbound.audio)
                     if not text:
-                        await self.transport.send(
-                            channel, "couldn't make out any speech in that voice message."
-                        )
+                        await self.transport.send(channel, "no speech in that.")
                         return
                     await self.transport.send(channel, f"heard: {text}")
 
@@ -82,7 +80,7 @@ class Dispatcher:
                     # Roll back first: the half-turn ends on a tool_use with no
                     # result, which the replay would 400 on.
                     self.sessions.drop(channel)
-                    slow.cancel()  # a login prompt under "working on it..." reads as a hang
+                    slow.cancel()  # a login prompt under a heartbeat reads as a hang
                     await self.reauth(channel, exc.provider)
                     session = self.sessions.get(channel)
                     reply = await self._turn(session, text)
@@ -94,7 +92,7 @@ class Dispatcher:
             # the next boot would load it and 400 on every request.
             self.sessions.drop(channel)
             slow.cancel()
-            await self.transport.send(channel, "reloading...")
+            await self.transport.send(channel, "reloading.")
             try:
                 reload.restart()  # replaces the process; nothing below runs
             except OSError as exc:
@@ -125,9 +123,13 @@ class Dispatcher:
     async def _turn(self, session, text):
         return await conversation.run_turn(session, text, self.store, self.mcp_tools)
 
-    async def _slow_note(self, channel, delay=20):
-        await asyncio.sleep(delay)
-        await self.transport.send(channel, "working on it...")
+    async def _slow_note(self, channel):
+        minutes = 1
+        await asyncio.sleep(60)
+        while True:
+            await self.transport.send(channel, f"still working ({minutes}m).")
+            await asyncio.sleep(300)
+            minutes += 5
 
     async def reauth(self, channel, provider):
         async def say(text):

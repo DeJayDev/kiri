@@ -45,11 +45,11 @@ def describe(provider):
         return "no credentials"
 
     remaining = expires_in(record)
-    refresh = "with refresh token" if record.get("refresh_token") else "NO refresh token"
+    refresh = "with refresh token" if record.get("refresh_token") else "no refresh token"
     if remaining is None:
         return f"logged in, no expiry recorded ({refresh})"
     if remaining <= 0:
-        return f"EXPIRED {_duration(-remaining)} ago ({refresh})"
+        return f"expired {_duration(-remaining)} ago ({refresh})"
     return f"valid for {_duration(remaining)} ({refresh})"
 
 

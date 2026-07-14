@@ -8,5 +8,5 @@ from kiri.engine.providers.base import PROVIDERS
 
 def build(name):
     if name not in PROVIDERS:
-        raise SystemExit(f"Unknown provider '{name}' (use: {', '.join(sorted(PROVIDERS))})")
+        raise SystemExit(f"unknown provider '{name}' (use: {', '.join(sorted(PROVIDERS))})")
     return PROVIDERS[name]()

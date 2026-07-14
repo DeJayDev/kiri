@@ -38,7 +38,7 @@ def _list_mcp(servers):
         print('add one:  {"servers": {"linear": {"url": "https://mcp.linear.app/mcp"}}}')
         return
     for name in sorted(servers):
-        state = "authorized" if credentials.get(mcp_auth.key(name)) else "NOT authorized"
+        state = "authorized" if credentials.get(mcp_auth.key(name)) else "not authorized"
         print(f"  {name:<12}{state}")
     print("\n`kiri mcp <server>` to authorize")
 

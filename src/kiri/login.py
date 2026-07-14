@@ -8,7 +8,7 @@ async def login(provider, say):
         f"{provider.name} login needed.\n"
         f"open {device.verification_uri}\n"
         f"code: {device.user_code}\n"
-        f"(expires in {minutes}m -- i'll pick up where we left off)"
+        f"(expires in {minutes}m -- pick up where we left off)"
     )
     await provider.finish_login(device)
     await say(f"{provider.name} authorized.")

@@ -47,7 +47,7 @@ def test_require_rejects_an_unknown_provider(monkeypatch):
     monkeypatch.setattr(config, "SUMMARY_PROVIDER", None)
     with pytest.raises(SystemExit) as exc:
         config.require()
-    assert "Unknown provider" in str(exc.value)
+    assert "unknown provider" in str(exc.value)
 
 
 def test_require_also_validates_the_summary_provider(monkeypatch):

@@ -28,7 +28,7 @@ class XAI(OpenAI):
         if self.key() or credentials.get(self.name):
             return None
         if not config.XAI_CLIENT_ID:
-            return "xai client_id (or XAI_API_KEY)"
+            return "xai client_id or XAI_API_KEY"
         return None
 
     async def endpoints(self):
@@ -183,8 +183,8 @@ class XAI(OpenAI):
         except ProviderError as exc:
             if exc.status == 403 and not self.key():
                 raise RuntimeError(
-                    "xai returned 403 on the OAuth surface. your login is fine -- xAI "
-                    "allowlists OAuth API access separately from the subscription. set "
-                    "XAI_API_KEY to use the api-key surface, or run `kiri auth status`."
+                    "xai returned 403 on the OAuth surface. OAuth API access is "
+                    "allowlisted separately from the subscription. set XAI_API_KEY to "
+                    "use the api-key surface, or run `kiri auth status`."
                 ) from exc
             raise

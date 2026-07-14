@@ -28,7 +28,7 @@ def test_unknown_provider_is_fatal():
     try:
         providers.build("nope")
     except SystemExit as exc:
-        assert "Unknown provider" in str(exc)
+        assert "unknown provider" in str(exc)
     else:
         raise AssertionError("expected SystemExit")
 
@@ -173,7 +173,7 @@ def _xai_raising(monkeypatch, error):
 
 def test_xai_explains_a_real_403(monkeypatch):
     provider = _xai_raising(monkeypatch, ProviderError("xai", 403, "forbidden"))
-    with pytest.raises(RuntimeError, match="allowlists OAuth API access"):
+    with pytest.raises(RuntimeError, match="allowlisted separately from the subscription"):
         asyncio.run(provider.complete([], [], None))
 
 

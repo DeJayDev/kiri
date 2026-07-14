@@ -117,19 +117,19 @@ def require():
     for name in {PROVIDER, SUMMARY_PROVIDER} - {None}:
         if name not in providers.PROVIDERS:
             known = ", ".join(providers.PROVIDERS)
-            raise SystemExit(f"Unknown provider '{name}' (use: {known})")
+            raise SystemExit(f"unknown provider '{name}' (use: {known})")
         gap = providers.PROVIDERS[name]().missing()
         if gap:
             missing.append(gap)
 
     if TRANSPORT not in transports.TRANSPORTS:
         known = ", ".join(sorted(transports.TRANSPORTS))
-        raise SystemExit(f"Unknown transport '{TRANSPORT}' (use: {known})")
+        raise SystemExit(f"unknown transport '{TRANSPORT}' (use: {known})")
     gap = transports.TRANSPORTS[TRANSPORT].missing()
     if gap:
         missing.append(gap)
 
     if missing:
-        raise SystemExit(f"Missing required config: {', '.join(missing)}")
+        raise SystemExit(f"missing required config: {', '.join(missing)}")
     os.makedirs(KIRI_HOME, exist_ok=True)
     os.makedirs(MEMORY_DIR, exist_ok=True)

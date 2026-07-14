@@ -66,8 +66,8 @@ class DiscordDM(Transport):
         # A guild id here means a stored job points somewhere it shouldn't.
         if not isinstance(channel, discord.DMChannel):
             raise RuntimeError(
-                f"discord: refusing to send to channel {channel_id}, "
-                f"it is a {type(channel).__name__} and not a DM"
+                f"discord: refusing to send to channel {channel_id} -- "
+                f"{type(channel).__name__}, not a DM"
             )
         return channel
 

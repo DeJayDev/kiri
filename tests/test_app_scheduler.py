@@ -34,7 +34,7 @@ def test_one_shot_reminder_delivers_text_without_agent(monkeypatch):
 
     asyncio.run(app.execute_job(job, "base", store=None, mcp_tools=[], dispatcher=dispatcher))
 
-    assert dispatcher.transport.sent == [(5, "Reminder: stretch")]
+    assert dispatcher.transport.sent == [(5, "reminder: stretch")]
 
 
 def test_recurring_job_runs_through_agent(monkeypatch):
@@ -102,4 +102,4 @@ def test_reload_in_a_scheduled_job_says_so_instead_of_an_empty_error(monkeypatch
     asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
 
     (_channel, reply), = dispatcher.transport.sent
-    assert "reload is not available in a scheduled job" in reply
+    assert "reload not available from a job" in reply

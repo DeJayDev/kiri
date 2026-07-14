@@ -54,7 +54,7 @@ async def start():
 async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
     transport = dispatcher.transport
     if job["cron"] is None:
-        await transport.send(job["channel_id"], f"Reminder: {job['instruction']}")
+        await transport.send(job["channel_id"], f"reminder: {job['instruction']}")
         return
 
     async def turn():
@@ -68,7 +68,7 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
     except Restart:
         # A job has no owner watching, and restarting mid-turn would drop whatever
         # else is in flight. Reload is a live-conversation action.
-        reply = "job error: reload is not available in a scheduled job; ask me in the DM"
+        reply = "job error: reload not available from a job; ask in the DM"
     except AuthRequired as exc:
         # A job firing while the owner is asleep waits out the device code's expiry
         # and then fails: it never hangs, and never fires hours stale.
