@@ -93,6 +93,9 @@ DB_PATH = os.path.expanduser(_get("KIRI_DB", os.path.join(KIRI_HOME, "kiri.db"),
 # Flat-file long-term memory the agent reads and writes with the shell (rg/cat).
 # Deliberately not sqlite: greppable beats a schema the agent has to introspect.
 MEMORY_DIR = os.path.expanduser(_get("KIRI_MEMORY_DIR", os.path.join(KIRI_HOME, "memory"), "paths", "memory"))
+# Owner-authored procedures, one <name>/SKILL.md each. Their descriptions ride in
+# the prompt prefix, so unlike memory these are written by a person, rarely.
+SKILLS_DIR = os.path.expanduser(_get("KIRI_SKILLS_DIR", os.path.join(KIRI_HOME, "skills"), "paths", "skills"))
 MCP_CONFIG = os.path.expanduser(
     _get("KIRI_MCP_CONFIG", os.path.join(KIRI_HOME, "mcp.json"), "paths", "mcp_config")
 )
@@ -133,3 +136,4 @@ def require():
         raise SystemExit(f"missing required config: {', '.join(missing)}")
     os.makedirs(KIRI_HOME, exist_ok=True)
     os.makedirs(MEMORY_DIR, exist_ok=True)
+    os.makedirs(SKILLS_DIR, exist_ok=True)

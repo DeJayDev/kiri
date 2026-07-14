@@ -2,7 +2,7 @@ import asyncio
 import traceback
 from contextlib import AsyncExitStack
 
-from kiri import config, db, http, mcp_client, transports, usage
+from kiri import config, db, http, mcp_client, skills, transports, usage
 from kiri.engine import conversation, llm, prompt, providers
 from kiri.engine.context import Session
 from kiri.engine.providers.base import AuthRequired
@@ -20,7 +20,7 @@ async def start():
     summarizer = providers.build(config.SUMMARY_PROVIDER) if config.SUMMARY_PROVIDER else chat
     llm.use(chat, summarizer, sink=usage.record)
 
-    base_prompt = prompt.load()
+    base_prompt = "\n\n".join(filter(None, [prompt.load(), skills.index()]))
     sessions = SessionStore(base_prompt)
     store = JobStore()
 
