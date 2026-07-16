@@ -4,6 +4,12 @@ from kiri import config, skills
 
 
 @pytest.fixture(autouse=True)
+def builtin_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(skills, "BUILTIN_DIR", str(tmp_path / "builtin"))
+    return tmp_path / "builtin"
+
+
+@pytest.fixture(autouse=True)
 def skills_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SKILLS_DIR", str(tmp_path / "skills"))
     return tmp_path / "skills"
@@ -50,6 +56,24 @@ def test_a_skill_without_frontmatter_fails_loud(skills_dir):
 
     with pytest.raises(RuntimeError, match="no frontmatter"):
         skills.index()
+
+
+def test_a_wrapped_description_fails_loud_instead_of_losing_its_second_half(skills_dir):
+    _write(
+        skills_dir,
+        "todoist-cli",
+        "---\nname: todoist-cli\ndescription: Manage tasks via the td CLI. Use when the owner\n"
+        "  mentions tasks, inbox, today, or projects.\n---\n",
+    )
+
+    with pytest.raises(RuntimeError, match="one line"):
+        skills.index()
+
+
+def test_a_description_keeps_everything_after_the_first_colon(skills_dir):
+    _write(skills_dir, "wttr", "---\nname: wttr\ndescription: Weather: never fetch the png.\n---\n")
+
+    assert "Weather: never fetch the png." in skills.index()
 
 
 def test_a_directory_without_a_skill_file_is_ignored(skills_dir):

@@ -71,8 +71,9 @@ OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY", None, "providers", "openrouter",
 OPENAI_API_KEY = _get("OPENAI_API_KEY", None, "providers", "openai", "api_key")
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", None, "providers", "openai", "base_url")
 
-# No default: baking in another product's client_id means impersonating it.
-XAI_CLIENT_ID = _get("XAI_CLIENT_ID", None, "providers", "xai", "client_id")
+XAI_CLIENT_ID = _get(
+    "XAI_CLIENT_ID", "b1a00492-073a-47ea-816f-4c329264a828", "providers", "xai", "client_id"
+)
 XAI_API_KEY = _get("XAI_API_KEY", None, "providers", "xai", "api_key")
 
 DISCORD_BOT_TOKEN = _get("DISCORD_BOT_TOKEN", None, "discord", "token")

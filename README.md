@@ -14,7 +14,7 @@ To do this, Kiri does not provide any integrations. Its primary tool is the shel
 - **Model portability** Use any Anthropic, OpenRouter, or any OpenAI-compatible endpoint.
 - **MCP** Drop a standard server config at `~/.kiri/mcp.json`
   (`mcp.example.json` shows the shape).
-- **Skills** Procedures you write for Kiri, one `<name>/SKILL.md` in `~/.kiri/skills`. Kiri reads a skill's file before doing the thing it covers, so it isn't rediscovering your CLI's flags — or repeating the mistake that cost you an evening — every session. Only the one-line description stays in context; the body is read on demand. Invoke one yourself with `/<name>`.
+- **Skills** Procedures Kiri reads before doing the thing they cover, so she isn't rediscovering your CLI's flags — or repeating the mistake that cost you an evening — every session. A few ship with Kiri; write your own as one `<name>/SKILL.md` in `~/.kiri/skills`. Only the one-line description stays in context; the body is read on demand. Invoke one yourself with `/<name>`.
 - **Plugins** When no MCP server exists that you'd trust, write the tool yourself: a module in `src/kiri/tools/`. OAuth is shared plumbing (`kiri auth login <plugin>`), not something each plugin reinvents.
 
 ## Setup
@@ -60,8 +60,7 @@ One `<name>/SKILL.md` in `~/.kiri/skills`, with `name` and `description` in the 
 ```markdown
 ---
 name: todoist-cli
-description: Manage tasks and projects via the `td` CLI. Use when the owner
-  mentions tasks, inbox, today, upcoming, projects, labels, or filters.
+description: Manage tasks and projects via the `td` CLI. Use when the owner mentions tasks, inbox, today, upcoming, projects, labels, or filters.
 ---
 
 - `td auth token view` prints the token to stdout. Always capture it into a shell
@@ -70,7 +69,7 @@ description: Manage tasks and projects via the `td` CLI. Use when the owner
   in context and breaks the session. Use `td attachment view <url>`.
 ```
 
-Only the `description` stays in context. The body is read on demand, so it can be as long as it needs to be.
+Only the `description` stays in context. The body is read on demand, so it can be as long as it needs to be. Keep each frontmatter field on one line — a wrapped line is rejected at boot rather than silently truncated.
 
 **What belongs in a skill is inversely proportional to how easily Kiri could rediscover it with the shell.** A digest of `--help` earns its place only by saving round-trips. What `--help` will never say — this flag leaks a secret, that fetch kills the session, these two commands both look right and one is wrong — is the actual payload. Write the scars first.
 

@@ -10,6 +10,11 @@ _HEADER = (
     "repeat. The owner can also invoke one directly by writing /<name>."
 )
 
+# Skills shipped with Kiri live beside this module; the owner's live in
+# SKILLS_DIR and are scanned second, so a skill there shadows a built-in of the
+# same name.
+BUILTIN_DIR = os.path.dirname(__file__)
+
 
 def _frontmatter(path):
     with open(path) as f:
@@ -25,26 +30,40 @@ def _frontmatter(path):
 
     fields = {}
     for line in body[:end].splitlines():
-        key, sep, value = line.partition(":")
-        if not sep:
+        if not line.strip():
             continue
+
+        key, sep, value = line.partition(":")
+        # A wrapped line would otherwise vanish, taking the half of the
+        # description that says when to read the skill with it.
+        if not sep:
+            raise RuntimeError(
+                f"skill {path} wraps a frontmatter line onto the next -- keep each field on one line"
+            )
         fields[key.strip()] = value.strip().strip("\"'")
     return fields
+
+
+def _find(directory):
+    if not os.path.isdir(directory):
+        return {}
+
+    found = {}
+    for name in os.listdir(directory):
+        path = os.path.join(directory, name, "SKILL.md")
+        if os.path.exists(path):
+            found[name] = path
+    return found
 
 
 def index():
     # Read once at boot and folded into the base prompt: this rides in the cache
     # prefix, so it must not change between requests. `reload` re-execs, which is
     # how an edited skill takes effect.
-    if not os.path.isdir(config.SKILLS_DIR):
-        return ""
+    paths = _find(BUILTIN_DIR) | _find(config.SKILLS_DIR)
 
     lines = []
-    for name in sorted(os.listdir(config.SKILLS_DIR)):
-        path = os.path.join(config.SKILLS_DIR, name, "SKILL.md")
-        if not os.path.exists(path):
-            continue
-
+    for name, path in sorted(paths.items()):
         fields = _frontmatter(path)
         description = fields.get("description")
         if not description:

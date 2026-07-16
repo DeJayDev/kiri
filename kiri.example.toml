@@ -26,9 +26,9 @@ api_key = ""
 
 [providers.xai]
 # oauth against your SuperGrok / X Premium+ subscription: `kiri auth login xai`,
-# or just talk to kiri and it posts a device code. public desktop client id, no
-# secret; kiri ships no default so a revoked id fails loudly.
-client_id = ""
+# or just talk to kiri and it posts a device code. kiri defaults to the public
+# Grok Build client id; override it here only when using a different OAuth client.
+# client_id = ""
 # fallback only. xai allowlists its oauth api surface separately from the
 # subscription and can 403 a valid account. never used automatically.
 api_key = ""
@@ -59,6 +59,8 @@ home = "~/.kiri"
 # One <name>/SKILL.md per skill: a procedure Kiri reads before doing the thing it
 # covers. Every skill's description sits in Kiri's prompt so it knows the skill
 # exists; the body is only read when it's needed. Run `reload` after editing one.
+# Your skills here are indexed alongside the ones Kiri ships with; give one the
+# name of a built-in to replace it.
 # skills = "~/.kiri/skills"
 # mcp_config = "~/.kiri/mcp.json"
 # credentials = "~/.kiri/credentials.json"

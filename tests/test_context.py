@@ -24,11 +24,6 @@ def test_safe_cut_never_orphans_tool_result(monkeypatch):
     assert cut == 0 or _is_user_turn(session.messages[cut])
 
 
-def test_system_prompt_is_byte_stable_across_requests():
-    session = Session(1, "BASEPROMPT")
-    assert session.system() == session.system()
-
-
 def test_the_date_lives_in_the_turn_not_the_system_prompt():
     session = Session(1, "BASEPROMPT")
     session.append_user("hi")

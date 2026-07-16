@@ -1,5 +1,4 @@
 import asyncio
-import os
 import time
 
 from kiri import config, tools
@@ -77,16 +76,16 @@ def test_shell_times_out_and_tells_the_agent_how_to_retry():
 
 
 def test_shell_runs_to_completion_within_its_timeout():
-    out = asyncio.run(shell.run({"command": "sleep 2 && printf done", "timeout": 10}))
+    out = asyncio.run(shell.run({"command": "sleep 0.5 && printf done", "timeout": 10}))
     assert "exit: 0" in out
     assert "done" in out
 
 
-def test_shell_timeout_kills_the_whole_process_tree():
+def test_shell_timeout_kills_the_whole_process_tree(tmp_path):
     # The shell exits but a child keeps the pipes open; killing only the shell
     # would hang the drain. Marker file proves the child died too.
-    marker = "/tmp/kiri_tree_test_marker"
-    command = f"rm -f {marker}; (sleep 5; touch {marker}) & wait"
+    marker = tmp_path / "marker"
+    command = f"(sleep 2; touch {marker}) & wait"
     asyncio.run(shell.run({"command": command, "timeout": 1}))
-    time.sleep(6)
-    assert not os.path.exists(marker)
+    time.sleep(2)
+    assert not marker.exists()
