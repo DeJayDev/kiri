@@ -11,7 +11,8 @@ SCHEMA = {
     "description": (
         "Reload yourself so that changes to your prompt, config, tools or MCP "
         "servers take effect. Use it after you or the owner edit any of those. "
-        "The turn you are in ends here; the owner talks to you again afterwards."
+        "Your turn continues after the reload: you get confirmation it worked, "
+        "then report to the owner."
     ),
     "input_schema": {"type": "object", "properties": {}},
 }

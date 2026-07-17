@@ -41,9 +41,10 @@ async def run(args):
         return f"error: invalid timeout {raw!r} (whole seconds)"
 
     proc = await asyncio.create_subprocess_shell(
-        command,
+        _sourced(command),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        executable="/bin/bash",
         # Its own process group, so a timeout kills the whole tree and not just
         # the shell that spawned it.
         start_new_session=True,
@@ -58,6 +59,18 @@ async def run(args):
         raise
 
     return _format(proc.returncode, out, err)
+
+
+def _sourced(command):
+    # The systemd unit runs with a minimal PATH; source the owner's login files so
+    # ~/.local/bin and their custom bins resolve. The -r check and silenced stderr
+    # are load-bearing: a missing or broken rc must not abort the command.
+    return (
+        'for __rc in "$HOME/.profile" "$HOME/.bash_profile" "$HOME/.bashrc"; do\n'
+        '  [ -r "$__rc" ] && . "$__rc"\n'
+        "done 2>/dev/null\n"
+        f"{command}"
+    )
 
 
 async def _kill(proc):

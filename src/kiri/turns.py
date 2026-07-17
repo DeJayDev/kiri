@@ -1,6 +1,6 @@
 import asyncio
 
-from kiri import stt
+from kiri import resume, stt
 from kiri.auth.login import login
 from kiri.engine import conversation
 from kiri.engine.providers.base import AuthRequired
@@ -62,6 +62,7 @@ class Dispatcher:
 
     async def _handle(self, inbound):
         channel = inbound.channel_id
+        session = self.sessions.get(channel)
         slow = asyncio.create_task(self._slow_note(channel))
         try:
             async with self.transport.typing(channel):
@@ -74,7 +75,6 @@ class Dispatcher:
                     await self.transport.send(channel, f"heard: {text}")
 
                 try:
-                    session = self.sessions.get(channel)
                     reply = await self._turn(session, text)
                 except AuthRequired as exc:
                     # Roll back first: the half-turn ends on a tool_use with no
@@ -88,14 +88,14 @@ class Dispatcher:
             self.sessions.save(session)
             await self.transport.send(channel, reply)
         except Restart:
-            # The turn ends on a tool_use with no result, so it must not be saved --
-            # the next boot would load it and 400 on every request.
-            self.sessions.drop(channel)
+            self.sessions.save(session)
+            resume.mark(channel)
             slow.cancel()
             await self.transport.send(channel, "reloading.")
             try:
                 reload.restart()  # replaces the process; nothing below runs
             except OSError as exc:
+                resume.clear()
                 await self.transport.send(channel, f"error: reload failed, still running ({exc})")
             return
         except asyncio.CancelledError:

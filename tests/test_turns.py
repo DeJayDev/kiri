@@ -211,20 +211,22 @@ def test_expired_auth_logs_in_then_replays_the_same_turn(rig, monkeypatch):
     assert sessions.saved == ["session-1"]
 
 
-def test_reload_never_persists_the_poisoned_turn(rig, monkeypatch):
+def test_reload_saves_the_turn_and_marks_a_resume(rig, monkeypatch):
     dispatcher, transport, sessions = rig
-    restarted = []
+    restarted, marks = [], []
 
     async def turn(session, text):
         raise Restart()
 
     monkeypatch.setattr(dispatcher, "_turn", turn)
     monkeypatch.setattr(turns.reload, "restart", lambda: restarted.append(True))
+    monkeypatch.setattr(turns.resume, "mark", marks.append)
 
     asyncio.run(_run(dispatcher, "reload yourself"))
     assert transport.sent == ["reloading."]
-    assert sessions.dropped == [1]
-    assert sessions.saved == []
+    assert sessions.saved == ["session-1"]
+    assert sessions.dropped == []
+    assert marks == [1]
     assert restarted == [True]
 
 

@@ -82,6 +82,21 @@ def test_shell_runs_to_completion_within_its_timeout():
     assert "done" in out
 
 
+def test_shell_sources_login_profile_for_path(tmp_path, monkeypatch):
+    (tmp_path / ".profile").write_text("export FOO=from_profile\n")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    out = asyncio.run(shell.run({"command": "echo $FOO"}))
+    assert "from_profile" in out
+
+
+def test_shell_survives_a_broken_rc(tmp_path, monkeypatch):
+    (tmp_path / ".bashrc").write_text("this-is-not-a-command\nexport BAR=ok\n")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    out = asyncio.run(shell.run({"command": "echo done"}))
+    assert "exit: 0" in out
+    assert "done" in out
+
+
 def test_shell_timeout_kills_the_whole_process_tree(tmp_path):
     # The shell exits but a child keeps the pipes open; killing only the shell
     # would hang the drain. Marker file proves the child died too.

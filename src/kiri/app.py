@@ -2,7 +2,7 @@ import asyncio
 import traceback
 from contextlib import AsyncExitStack
 
-from kiri import config, db, http, mcp_client, usage
+from kiri import config, db, http, mcp_client, resume, usage
 from kiri.engine import conversation, llm, prompt
 from kiri.engine.context import Session
 from kiri.engine.providers import registry as providers
@@ -47,11 +47,27 @@ async def start():
             except Exception:
                 await transport.notify_owner(f"scheduler crashed:\n{traceback.format_exc()}")
 
+        async def resume_pending():
+            channel = resume.take()
+            if channel is None:
+                return
+            session = sessions.get(channel)
+            try:
+                reply = await conversation.run_turn(session, None, store, mcp_tools, transport)
+            except Exception as exc:
+                sessions.drop(channel)
+                await transport.send(channel, f"error: {exc}")
+                return
+            sessions.save(session)
+            await transport.send(channel, reply)
+
         scheduler = asyncio.create_task(supervised_scheduler())
+        resuming = asyncio.create_task(resume_pending())
         try:
             await transport.run(dispatcher.on_message)
         finally:
             scheduler.cancel()
+            resuming.cancel()
 
 
 async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
