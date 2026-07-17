@@ -7,10 +7,11 @@ import subprocess
 import time
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from kiri import credentials, http
+from kiri import http
+from kiri.auth import credentials
 
 # Plugins that construct an OAuth register here, so `kiri auth` can find them
-# without a separate manifest. Populated by importing kiri.tools.
+# without a separate manifest. Populated by importing kiri.tools.registry.
 CLIENTS = {}
 
 

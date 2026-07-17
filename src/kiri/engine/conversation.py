@@ -1,9 +1,9 @@
 from kiri.engine import agent
-from kiri.tools import build as build_registry
+from kiri.tools.registry import build as build_registry
 
 
-async def run_turn(session, text, store, mcp_tools):
+async def run_turn(session, text, store, mcp_tools, transport):
     # The single path both live DMs and scheduled jobs run through: assemble the
     # tools for this channel, then run the agent loop.
-    registry = build_registry(store, session.channel_id, mcp_tools)
+    registry = build_registry(store, session.channel_id, mcp_tools, transport)
     return await agent.run(session, text, registry)

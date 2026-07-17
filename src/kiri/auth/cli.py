@@ -2,15 +2,17 @@ import asyncio
 import json
 import os
 
-from kiri import config, credentials, http, mcp_auth, oauth
-from kiri.engine import providers
-from kiri.login import login as do_login
+from kiri import config, http
+from kiri.auth import credentials, oauth
+from kiri.auth import mcp as mcp_auth
+from kiri.auth.login import login as do_login
+from kiri.engine.providers import registry as providers
 
 
 def _plugin_clients():
-    # Importing the tools package is what constructs each plugin's OAuth, which is
+    # Importing the registry is what constructs each plugin's OAuth, which is
     # what registers it in oauth.CLIENTS.
-    import kiri.tools  # noqa: F401
+    import kiri.tools.registry  # noqa: F401
 
     return oauth.CLIENTS
 

@@ -19,6 +19,65 @@ def _voice_attachment(message):
     return message.attachments[0]
 
 
+class _OtherModal(discord.ui.Modal):
+    def __init__(self, view, question):
+        super().__init__(title="Answer")
+        self._view = view
+        # Discord rejects the whole modal if a text input label runs past 45
+        # characters.
+        self._answer = discord.ui.TextInput(
+            label=question[:45],
+            style=discord.TextStyle.paragraph,
+        )
+        self.add_item(self._answer)
+
+    async def on_submit(self, interaction):
+        self._view.answer = str(self._answer)
+        await interaction.response.edit_message(view=None)
+        self._view.stop()
+
+
+class _AnswerView(discord.ui.View):
+    def __init__(self, question, options, multi_select):
+        # No answer within the hour and the tool reports the timeout, rather than
+        # holding the turn open forever.
+        super().__init__(timeout=3600)
+        self.answer = None
+        # Discord caps a select option's label and description at 100 characters
+        # each.
+        select = discord.ui.Select(
+            placeholder="Pick an answer",
+            max_values=len(options) if multi_select else 1,
+            options=[
+                discord.SelectOption(
+                    label=option["label"][:100],
+                    description=(option.get("description") or "")[:100] or None,
+                )
+                for option in options
+            ],
+        )
+        select.callback = self._pick(select)
+        self.add_item(select)
+
+        other = discord.ui.Button(label="Something else", style=discord.ButtonStyle.secondary)
+        other.callback = self._other(question)
+        self.add_item(other)
+
+    def _pick(self, select):
+        async def callback(interaction):
+            self.answer = ", ".join(select.values)
+            await interaction.response.edit_message(view=None)
+            self.stop()
+
+        return callback
+
+    def _other(self, question):
+        async def callback(interaction):
+            await interaction.response.send_modal(_OtherModal(self, question))
+
+        return callback
+
+
 class _Client(discord.Client):
     def __init__(self, transport):
         super().__init__(intents=_intents)
@@ -73,6 +132,14 @@ class DiscordDM(Transport):
 
     async def send(self, channel_id, text):
         await self._write(await self._channel(channel_id), text)
+
+    async def ask(self, channel_id, question, options, multi_select):
+        channel = await self._channel(channel_id)
+        view = _AnswerView(question, options, multi_select)
+        await channel.send(question[:_LIMIT], view=view)
+        if await view.wait():
+            return "error: the owner did not answer within an hour"
+        return view.answer
 
     async def _write(self, channel, text):
         text = text or "(no output)"

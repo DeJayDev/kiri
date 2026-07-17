@@ -7,7 +7,8 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 
-from kiri import credentials, mcp_auth
+from kiri.auth import credentials
+from kiri.auth import mcp as mcp_auth
 
 # Providers cap tool names at 64 chars, and one over-long name rejects the whole
 # request. The tool half carries the meaning, so the prefix gets truncated hard.

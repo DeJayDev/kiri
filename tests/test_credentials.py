@@ -3,7 +3,8 @@ import stat
 
 import pytest
 
-from kiri import config, credentials
+from kiri import config
+from kiri.auth import credentials
 
 
 @pytest.fixture(autouse=True)

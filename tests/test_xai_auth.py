@@ -3,7 +3,8 @@ import time
 
 import pytest
 
-from kiri import config, credentials
+from kiri import config
+from kiri.auth import credentials
 from kiri.engine.providers.base import AuthRequired
 from kiri.engine.providers.xai import XAI
 

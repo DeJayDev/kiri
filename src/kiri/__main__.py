@@ -1,3 +1,3 @@
-from kiri import main
+from kiri.cli import main
 
 main()

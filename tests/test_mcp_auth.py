@@ -5,7 +5,9 @@ from contextlib import AsyncExitStack
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-from kiri import config, credentials, mcp_auth, mcp_client
+from kiri import config, mcp_client
+from kiri.auth import credentials
+from kiri.auth import mcp as mcp_auth
 
 
 @pytest.fixture(autouse=True)

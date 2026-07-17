@@ -5,7 +5,8 @@ import sys
 def main():
     # Imported inside the entrypoint so importing the package itself stays cheap
     # and free of circular-import hazards at package-init time.
-    from kiri import app, auth, db, usage
+    from kiri import app, db, usage
+    from kiri.auth import cli as auth
 
     args = sys.argv[1:]
     command = args[0] if args else None

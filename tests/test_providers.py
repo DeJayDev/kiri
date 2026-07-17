@@ -4,8 +4,8 @@ import json
 import pytest
 
 from kiri import config
-from kiri.engine import providers
 from kiri.engine.providers import anthropic, openai, xai
+from kiri.engine.providers import registry as providers
 from kiri.engine.providers.base import ProviderError
 
 _INTERNAL = [

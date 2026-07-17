@@ -1,7 +1,8 @@
 import asyncio
 import time
 
-from kiri import config, credentials, http
+from kiri import config, http
+from kiri.auth import credentials
 from kiri.engine.providers.base import AuthRequired, DeviceCode, ProviderError
 from kiri.engine.providers.openai import OpenAI
 

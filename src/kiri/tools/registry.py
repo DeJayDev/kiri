@@ -1,5 +1,5 @@
 from kiri.scheduling import tool as scheduler
-from kiri.tools import reload, shell, web
+from kiri.tools import ask, reload, shell, web
 
 
 class Registry:
@@ -20,12 +20,13 @@ class Registry:
         return await runner(args)
 
 
-def build(store, channel_id, mcp_tools):
+def build(store, channel_id, mcp_tools, transport):
     # Built per channel so scheduler tools deliver to the right DM. mcp_tools is
     # a shared list of (schema, runner) loaded once at startup.
     registry = Registry()
     registry.add(shell.SCHEMA, shell.run)
     registry.add(reload.SCHEMA, reload.run)
+    registry.add(ask.SCHEMA, ask.build(transport, channel_id))
     registry.add(web.SEARCH_SCHEMA, web.search)
     registry.add(web.FETCH_SCHEMA, web.fetch)
     for schema, runner in scheduler.build(store, channel_id):

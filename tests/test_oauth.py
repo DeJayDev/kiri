@@ -5,7 +5,8 @@ import time
 
 import pytest
 
-from kiri import config, credentials, oauth
+from kiri import config
+from kiri.auth import credentials, oauth
 
 
 @pytest.fixture(autouse=True)

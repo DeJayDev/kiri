@@ -111,8 +111,8 @@ SHELL_OUTPUT_CAP = 30000
 
 def require():
     # Imported here, not at module scope: both import config.
-    from kiri import transports
-    from kiri.engine import providers
+    from kiri.engine.providers import registry as providers
+    from kiri.transports import registry as transports
 
     for path in stale():
         print(f"warning: {CONFIG_PATH} sets {'.'.join(path)}, which kiri does not read")

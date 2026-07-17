@@ -2,13 +2,16 @@ import asyncio
 import traceback
 from contextlib import AsyncExitStack
 
-from kiri import config, db, http, mcp_client, skills, transports, usage
-from kiri.engine import conversation, llm, prompt, providers
+from kiri import config, db, http, mcp_client, usage
+from kiri.engine import conversation, llm, prompt
 from kiri.engine.context import Session
+from kiri.engine.providers import registry as providers
 from kiri.engine.providers.base import AuthRequired
 from kiri.engine.sessions import SessionStore
 from kiri.scheduling.store import JobStore, run_scheduler
+from kiri.skills import catalog
 from kiri.tools.reload import Restart
+from kiri.transports import registry as transports
 from kiri.turns import Dispatcher
 
 
@@ -20,7 +23,7 @@ async def start():
     summarizer = providers.build(config.SUMMARY_PROVIDER) if config.SUMMARY_PROVIDER else chat
     llm.use(chat, summarizer, sink=usage.record)
 
-    base_prompt = "\n\n".join(filter(None, [prompt.load(), skills.index()]))
+    base_prompt = "\n\n".join(filter(None, [prompt.load(), catalog.index()]))
     sessions = SessionStore(base_prompt)
     store = JobStore()
 
@@ -61,7 +64,7 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
         # A fresh session per job, so it never pollutes the live DM conversation --
         # which is also why the retry below needs no rollback.
         session = Session(job["channel_id"], base_prompt)
-        return await conversation.run_turn(session, job["instruction"], store, mcp_tools)
+        return await conversation.run_turn(session, job["instruction"], store, mcp_tools, transport)
 
     try:
         reply = await turn()

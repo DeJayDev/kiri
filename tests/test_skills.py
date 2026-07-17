@@ -1,6 +1,7 @@
 import pytest
 
-from kiri import config, skills
+from kiri import config
+from kiri.skills import catalog as skills
 
 
 @pytest.fixture(autouse=True)

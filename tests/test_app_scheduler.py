@@ -40,7 +40,7 @@ def test_one_shot_reminder_delivers_text_without_agent(monkeypatch):
 def test_recurring_job_runs_through_agent(monkeypatch):
     calls = []
 
-    async def fake_run_turn(session, text, store, mcp_tools):
+    async def fake_run_turn(session, text, store, mcp_tools, transport):
         calls.append((session.channel_id, text, store, mcp_tools))
         return "done"
 
@@ -61,7 +61,7 @@ def test_job_hitting_expired_auth_reauths_then_replays(monkeypatch):
 
     attempts = []
 
-    async def flaky_run_turn(session, text, store, mcp_tools):
+    async def flaky_run_turn(session, text, store, mcp_tools, transport):
         attempts.append(text)
         if len(attempts) == 1:
             raise AuthRequired(_Provider(), "expired")
@@ -92,7 +92,7 @@ def test_job_error_is_reported_not_raised(monkeypatch):
 
 
 def test_reload_in_a_scheduled_job_says_so_instead_of_an_empty_error(monkeypatch):
-    async def wants_reload(session, text, store, mcp_tools):
+    async def wants_reload(session, text, store, mcp_tools, transport):
         raise Restart()
 
     monkeypatch.setattr(app.conversation, "run_turn", wants_reload)

@@ -22,7 +22,11 @@ stt = [
 ]
 
 [project.scripts]
-kiri = "kiri:main"
+kiri = "kiri.cli:main"
+
+[tool.uv.build-backend]
+# No __init__.py anywhere; uv_build otherwise insists on src/kiri/__init__.py.
+namespace = true
 
 [build-system]
 requires = ["uv_build>=0.11.21,<0.12.0"]
@@ -31,7 +35,13 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff>=0.15.22",
 ]
+
+[tool.ruff.lint]
+# Lint and sort imports only -- `ruff format` is deliberately not used, so nothing
+# reflows a line the owner wrapped on purpose. E501 stays out of the rule set.
+extend-select = ["I"]
 
 [tool.basedpyright]
 typeCheckingMode = "standard"

@@ -1,9 +1,9 @@
 import asyncio
 
 from kiri import stt
+from kiri.auth.login import login
 from kiri.engine import conversation
 from kiri.engine.providers.base import AuthRequired
-from kiri.login import login
 from kiri.tools import reload
 from kiri.tools.reload import Restart
 
@@ -121,7 +121,9 @@ class Dispatcher:
             slow.cancel()
 
     async def _turn(self, session, text):
-        return await conversation.run_turn(session, text, self.store, self.mcp_tools)
+        return await conversation.run_turn(
+            session, text, self.store, self.mcp_tools, self.transport
+        )
 
     async def _slow_note(self, channel):
         minutes = 1

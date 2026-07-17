@@ -11,6 +11,7 @@ To do this, Kiri does not provide any integrations. Its primary tool is the shel
 - **Voice messages**, transcribed on-device with faster-whisper: Install with `uv sync --extra stt`.
 - **Memory** Kiri conversations are rolling, similar to one long Claude Code session. Messages from the past are automatically summarized. Long-term memory is separate: plain files in `~/.kiri/memory` that Kiri writes and reads itself — greppable, editable, no schema.
 - **Followups** While Kiri is working on a task, any messages you send will trigger a follow up - not interrupt her. To stop Kiri just say `stop`.
+- **Questions** When a call is yours to make, Kiri asks mid-task instead of guessing, and writes the likely answers out for you so you tap rather than type. Something else is always an option. Each transport renders it natively — a Discord picker, or a numbered list in the terminal.
 - **Model portability** Use any Anthropic, OpenRouter, or any OpenAI-compatible endpoint.
 - **MCP** Drop a standard server config at `~/.kiri/mcp.json`
   (`mcp.example.json` shows the shape).
@@ -47,7 +48,9 @@ A tool's schema rides in *every* request Kiri ever makes, whether or not it's us
 
 ### Writing a plugin
 
-A module under `src/kiri/tools/`, exporting a `SCHEMA` and an `async run(args)` that returns a string — then one `registry.add(...)` line in `tools/__init__.py`. MCP tools are wrapped into the same shape, so the registry can't tell them apart. `tools/web.py` is a complete example in 75 lines.
+A module under `src/kiri/tools/`, exporting a `SCHEMA` and an `async run(args)` that returns a string — then one `registry.add(...)` line in `tools/registry.py`. MCP tools are wrapped into the same shape, so the registry can't tell them apart. `tools/web.py` is a complete example in 75 lines.
+
+A plugin needing the session, the channel, or the jobs DB takes them at build time instead: export a `build(...)` returning the runner, and bind it in `registry.py` where those are in scope. `tools/ask.py` and `scheduling/tool.py` both do this.
 
 The `description` is a prompt, not a docstring: it is the only thing Kiri uses to decide whether to call you. Return a string even on failure (`"error: ..."`) — a plugin that raises kills the turn, one that returns an error lets the model read it and adapt.
 
@@ -79,4 +82,5 @@ Run `reload` after editing one.
 
 ```sh
 uv run pytest -q
+uv run ruff check --fix src tests   # lint + sort imports
 ```
