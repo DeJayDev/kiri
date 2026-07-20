@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import traceback
 from contextlib import AsyncExitStack
 
@@ -52,6 +53,7 @@ async def start():
             if channel is None:
                 return
             session = sessions.get(channel)
+            session.seal_dangling_tools()
             try:
                 reply = await conversation.run_turn(session, None, store, mcp_tools, transport)
             except Exception as exc:
@@ -61,11 +63,30 @@ async def start():
             sessions.save(session)
             await transport.send(channel, reply)
 
+        serve = asyncio.create_task(transport.run(dispatcher.on_message))
+
+        def graceful_stop():
+            # systemd sends SIGTERM on stop/restart (SIGKILL only after the 90s
+            # timeout). Save and mark a resume the way the reload tool does, so a
+            # restart from anywhere -- owner, deploy, crash loop -- comes back and
+            # finishes the turn instead of dropping it silently.
+            sessions.flush()
+            channel = dispatcher.active_channel()
+            if channel is not None:
+                resume.mark(channel)
+            serve.cancel()
+
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGTERM, graceful_stop)
+
         scheduler = asyncio.create_task(supervised_scheduler())
         resuming = asyncio.create_task(resume_pending())
         try:
-            await transport.run(dispatcher.on_message)
+            await serve
+        except asyncio.CancelledError:
+            pass
         finally:
+            loop.remove_signal_handler(signal.SIGTERM)
             scheduler.cancel()
             resuming.cancel()
 

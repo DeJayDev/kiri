@@ -18,6 +18,10 @@ class SessionStore:
         self._sessions[channel_id] = session
         return session
 
+    def flush(self):
+        for session in self._sessions.values():
+            self.save(session)
+
     def drop(self, channel_id):
         # Forget the in-memory session; the next get() reloads the last saved
         # state, discarding any half-finished turn.

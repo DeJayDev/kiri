@@ -50,6 +50,22 @@ def _msg(text):
     return Inbound(channel_id=1, text=text)
 
 
+def test_active_channel_finds_a_running_turn_and_ignores_finished_ones(rig):
+    dispatcher, _, _ = rig
+
+    async def _check():
+        done = asyncio.create_task(asyncio.sleep(0))
+        await done
+        running = asyncio.create_task(asyncio.sleep(5))
+        dispatcher.tasks = {7: done, 9: running}
+        assert dispatcher.active_channel() == 9
+        running.cancel()
+        dispatcher.tasks = {7: done}
+        assert dispatcher.active_channel() is None
+
+    asyncio.run(_check())
+
+
 def test_a_slow_turn_says_it_is_still_alive(rig, monkeypatch):
     # The owner cannot see the agent loop. A long turn that says nothing is
     # indistinguishable from a hung one.

@@ -46,6 +46,22 @@ class Session:
     def append_tool_results(self, results):
         self.messages.append({"role": "user", "content": results})
 
+    def seal_dangling_tools(self):
+        # A restart can cut a turn between an assistant tool_use and its result; the
+        # next request 400s on the unanswered tool_use. Fill each so resume replays
+        # cleanly, the same shape the reload tool writes before it re-execs.
+        if not self.messages:
+            return
+        last = self.messages[-1]
+        if last["role"] != "assistant" or isinstance(last["content"], str):
+            return
+        ids = [b["id"] for b in last["content"] if b.get("type") == "tool_use"]
+        if not ids:
+            return
+        self.append_tool_results(
+            [{"type": "tool_result", "tool_use_id": i, "content": "interrupted by a restart"} for i in ids]
+        )
+
     def record_usage(self, usage):
         # input_tokens is only the uncached remainder; on its own it reports a full
         # context as tiny and compaction never fires.

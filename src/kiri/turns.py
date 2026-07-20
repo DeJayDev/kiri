@@ -72,6 +72,12 @@ class Dispatcher:
         self.tasks[channel] = task
         return task
 
+    def active_channel(self):
+        for channel, task in self.tasks.items():
+            if not task.done():
+                return channel
+        return None
+
     async def _drain(self, channel):
         queue = self.pending.setdefault(channel, [])
         try:

@@ -24,6 +24,25 @@ def test_safe_cut_never_orphans_tool_result(monkeypatch):
     assert cut == 0 or _is_user_turn(session.messages[cut])
 
 
+def test_seal_fills_a_tool_use_left_dangling_by_a_restart():
+    session = Session(1, "base")
+    session.messages = [
+        {"role": "user", "content": "run it"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "a", "name": "shell", "input": {}}]},
+    ]
+    session.seal_dangling_tools()
+    assert session.messages[-1]["content"] == [
+        {"type": "tool_result", "tool_use_id": "a", "content": "interrupted by a restart"}
+    ]
+
+
+def test_seal_is_a_noop_when_the_last_turn_is_already_clean():
+    session = Session(1, "base")
+    session.messages = [{"role": "assistant", "content": [{"type": "text", "text": "done"}]}]
+    session.seal_dangling_tools()
+    assert len(session.messages) == 1
+
+
 def test_the_date_lives_in_the_turn_not_the_system_prompt():
     session = Session(1, "BASEPROMPT")
     session.append_user("hi")
