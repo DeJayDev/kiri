@@ -2,8 +2,10 @@ from kiri.engine import llm
 from kiri.tools.reload import Restart
 
 
-async def run(session, user_text, registry):
-    if user_text is not None:
+async def run(session, user_text, registry, notify):
+    if user_text is None:
+        session.seal_dangling_tools()
+    else:
         session.append_user(user_text)
 
     while True:
@@ -16,6 +18,12 @@ async def run(session, user_text, registry):
         session.append_assistant(content)
         if data.get("stop_reason") != "tool_use":
             return llm.text_of(content)
+
+        # Text the model wrote alongside its tool calls; only the final turn's text
+        # is returned to the caller, so deliver this now or the owner never sees it.
+        said = llm.text_of(content)
+        if said:
+            await notify(said)
 
         results = []
         for block in content:

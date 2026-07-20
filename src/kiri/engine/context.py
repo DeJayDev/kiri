@@ -38,7 +38,15 @@ class Session:
         return parts
 
     def append_user(self, text):
-        self.messages.append({"role": "user", "content": f"{text}\n\nToday is {_today()} (UTC)."})
+        dated = f"{text}\n\nToday is {_today()} (UTC)."
+        seals = self._dangling_tool_results()
+        if seals:
+            # An interrupted turn left an unanswered tool_use; fold its result into
+            # this same user turn, or the request 400s on the dangling call and two
+            # user turns stack back to back.
+            self.messages.append({"role": "user", "content": [*seals, {"type": "text", "text": dated}]})
+            return
+        self.messages.append({"role": "user", "content": dated})
 
     def append_assistant(self, content):
         self.messages.append({"role": "assistant", "content": content})
@@ -46,21 +54,24 @@ class Session:
     def append_tool_results(self, results):
         self.messages.append({"role": "user", "content": results})
 
-    def seal_dangling_tools(self):
+    def _dangling_tool_results(self):
         # A restart can cut a turn between an assistant tool_use and its result; the
-        # next request 400s on the unanswered tool_use. Fill each so resume replays
-        # cleanly, the same shape the reload tool writes before it re-execs.
+        # next request 400s on the unanswered tool_use unless something answers it.
         if not self.messages:
-            return
+            return []
         last = self.messages[-1]
         if last["role"] != "assistant" or isinstance(last["content"], str):
-            return
-        ids = [b["id"] for b in last["content"] if b.get("type") == "tool_use"]
-        if not ids:
-            return
-        self.append_tool_results(
-            [{"type": "tool_result", "tool_use_id": i, "content": "interrupted by a restart"} for i in ids]
-        )
+            return []
+        return [
+            {"type": "tool_result", "tool_use_id": b["id"], "content": "interrupted by a restart"}
+            for b in last["content"]
+            if b.get("type") == "tool_use"
+        ]
+
+    def seal_dangling_tools(self):
+        results = self._dangling_tool_results()
+        if results:
+            self.append_tool_results(results)
 
     def record_usage(self, usage):
         # input_tokens is only the uncached remainder; on its own it reports a full

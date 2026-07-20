@@ -53,7 +53,6 @@ async def start():
             if channel is None:
                 return
             session = sessions.get(channel)
-            session.seal_dangling_tools()
             try:
                 reply = await conversation.run_turn(session, None, store, mcp_tools, transport)
             except Exception as exc:
@@ -61,7 +60,9 @@ async def start():
                 await transport.send(channel, f"error: {exc}")
                 return
             sessions.save(session)
-            await transport.send(channel, reply)
+            # Never come back from a restart silent: if the resumed turn produced no
+            # text of its own, the owner still hears that it is back.
+            await transport.send(channel, reply or "back up.")
 
         serve = asyncio.create_task(transport.run(dispatcher.on_message))
 

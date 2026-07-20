@@ -36,6 +36,25 @@ def test_seal_fills_a_tool_use_left_dangling_by_a_restart():
     ]
 
 
+def test_a_new_message_after_a_cut_turn_folds_the_seal_into_one_user_turn():
+    session = Session(1, "base")
+    session.messages = [
+        {"role": "user", "content": "run it"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "a", "name": "shell", "input": {}}]},
+    ]
+    session.append_user("you there?")
+    assert len(session.messages) == 3
+    content = session.messages[-1]["content"]
+    assert content[0] == {"type": "tool_result", "tool_use_id": "a", "content": "interrupted by a restart"}
+    assert content[1]["type"] == "text" and "you there?" in content[1]["text"]
+
+
+def test_a_normal_user_turn_stays_a_plain_string():
+    session = Session(1, "base")
+    session.append_user("hi")
+    assert isinstance(session.messages[-1]["content"], str)
+
+
 def test_seal_is_a_noop_when_the_last_turn_is_already_clean():
     session = Session(1, "base")
     session.messages = [{"role": "assistant", "content": [{"type": "text", "text": "done"}]}]
