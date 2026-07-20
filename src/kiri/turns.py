@@ -1,11 +1,35 @@
 import asyncio
+import re
 
 from kiri import resume, stt
 from kiri.auth.login import login
 from kiri.engine import conversation
 from kiri.engine.providers.base import AuthRequired
+from kiri.skills import catalog
 from kiri.tools import reload
 from kiri.tools.reload import Restart
+
+_SLASH = re.compile(r"^/([a-z0-9][a-z0-9-]*)(?:[:\s]+(.*))?$", re.DOTALL)
+
+
+def _expand_skill(text):
+    # A /<name> invocation force-loads the skill body into this turn -- the model
+    # reads the procedure instead of choosing whether to. Returns (message, error);
+    # a matched name with no skill is the owner's typo, so fail loud.
+    match = _SLASH.match(text.strip())
+    if not match:
+        return text, None
+
+    name, rest = match.group(1), (match.group(2) or "").strip()
+    body = catalog.load(name)
+    if body is None:
+        have = ", ".join(catalog.names()) or "none"
+        return text, f"no skill '{name}'. have: {have}."
+
+    message = f"The owner invoked the /{name} skill. Follow it now.\n\n{body}"
+    if rest:
+        message += f"\n\nTheir message: {rest}"
+    return message, None
 
 
 class Dispatcher:
@@ -73,6 +97,11 @@ class Dispatcher:
                         await self.transport.send(channel, "no speech in that.")
                         return
                     await self.transport.send(channel, f"heard: {text}")
+
+                text, err = _expand_skill(text)
+                if err:
+                    await self.transport.send(channel, err)
+                    return
 
                 try:
                     reply = await self._turn(session, text)

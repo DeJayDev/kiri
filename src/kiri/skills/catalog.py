@@ -56,11 +56,35 @@ def _find(directory):
     return found
 
 
+def _paths():
+    return _find(BUILTIN_DIR) | _find(config.SKILLS_DIR)
+
+
+def load(name):
+    # The body a /<name> invocation force-feeds the model, frontmatter stripped:
+    # the model already has the description from the index and needs the procedure.
+    path = _paths().get(name)
+    if path is None:
+        return None
+
+    with open(path) as f:
+        text = f.read()
+    if text.startswith("---\n"):
+        end = text[4:].find("\n---")
+        if end != -1:
+            text = text[4 + end + 4 :]
+    return text.strip()
+
+
+def names():
+    return sorted(_paths())
+
+
 def index():
     # Read once at boot and folded into the base prompt: this rides in the cache
     # prefix, so it must not change between requests. `reload` re-execs, which is
     # how an edited skill takes effect.
-    paths = _find(BUILTIN_DIR) | _find(config.SKILLS_DIR)
+    paths = _paths()
 
     lines = []
     for name, path in sorted(paths.items()):

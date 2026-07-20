@@ -230,6 +230,33 @@ def test_reload_saves_the_turn_and_marks_a_resume(rig, monkeypatch):
     assert restarted == [True]
 
 
+def test_a_slash_invocation_force_loads_the_skill_body(monkeypatch):
+    monkeypatch.setattr(turns.catalog, "load", lambda name: "Run curl wttr.in." if name == "wttr" else None)
+
+    message, err = turns._expand_skill("/wttr london")
+
+    assert err is None
+    assert "Run curl wttr.in." in message
+    assert "Their message: london" in message
+
+
+def test_an_unknown_slash_skill_fails_loud_with_the_available_names(monkeypatch):
+    monkeypatch.setattr(turns.catalog, "load", lambda name: None)
+    monkeypatch.setattr(turns.catalog, "names", lambda: ["wttr"])
+
+    message, err = turns._expand_skill("/nope")
+
+    assert message == "/nope"
+    assert err == "no skill 'nope'. have: wttr."
+
+
+def test_plain_text_passes_through_untouched(monkeypatch):
+    message, err = turns._expand_skill("what's the weather?")
+
+    assert message == "what's the weather?"
+    assert err is None
+
+
 async def _reply(text):
     return text
 

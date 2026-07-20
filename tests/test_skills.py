@@ -89,3 +89,16 @@ def test_skills_are_indexed_in_a_stable_order(skills_dir):
     index = skills.index()
 
     assert index.index("a-skill") < index.index("b-skill")
+
+
+def test_load_returns_the_body_without_frontmatter(skills_dir):
+    _write(skills_dir, "wttr", "---\nname: wttr\ndescription: Weather.\n---\n\nRun curl wttr.in.\n")
+
+    body = skills.load("wttr")
+
+    assert body == "Run curl wttr.in."
+    assert "description" not in body
+
+
+def test_load_is_none_for_an_unknown_skill(skills_dir):
+    assert skills.load("nope") is None
