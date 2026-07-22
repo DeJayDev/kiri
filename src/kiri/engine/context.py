@@ -8,7 +8,7 @@ from kiri.engine import llm
 
 def environment():
     return (
-        f"Host {socket.gethostname()}, {platform.system()}. "
+        f"Runtime: host {socket.gethostname()}, {platform.system()}. "
         f"Your long-term memory is flat files under {config.MEMORY_DIR}; "
         "read and update it with the shell (rg, cat, write)."
     )

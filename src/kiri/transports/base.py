@@ -11,6 +11,10 @@ class Transport:
         if cls.name:
             TRANSPORTS[cls.name] = cls
 
+    async def ready(self):
+        # Override where send() only works once run() has connected.
+        return
+
 
 @dataclass
 class Inbound:

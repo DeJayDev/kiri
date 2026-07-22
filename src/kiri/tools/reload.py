@@ -25,6 +25,5 @@ async def run(args):
 def restart():
     # Through the interpreter, not argv[0]: a console script installed by uv is not
     # necessarily re-execable, and execv does no PATH lookup. Replaces this process
-    # image, so nothing after this line runs -- an OSError here is the caller's to
-    # report, because by then it has already said "reloading...".
+    # image, so nothing after this line runs.
     os.execv(sys.executable, [sys.executable, "-m", "kiri", *sys.argv[1:]])

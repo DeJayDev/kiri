@@ -118,6 +118,9 @@ class DiscordDM(Transport):
         self._on_message = on_message
         await self._client.start(config.DISCORD_BOT_TOKEN)
 
+    async def ready(self):
+        await self._client.wait_until_ready()
+
     async def _channel(self, channel_id) -> discord.DMChannel:
         channel = self._client.get_channel(channel_id) or await self._client.fetch_channel(
             channel_id

@@ -239,7 +239,7 @@ def test_reload_saves_the_turn_and_marks_a_resume(rig, monkeypatch):
     monkeypatch.setattr(turns.resume, "mark", marks.append)
 
     asyncio.run(_run(dispatcher, "reload yourself"))
-    assert transport.sent == ["reloading."]
+    assert transport.sent == []
     assert sessions.saved == ["session-1"]
     assert sessions.dropped == []
     assert marks == [1]

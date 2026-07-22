@@ -126,7 +126,6 @@ class Dispatcher:
             self.sessions.save(session)
             resume.mark(channel)
             slow.cancel()
-            await self.transport.send(channel, "reloading.")
             try:
                 reload.restart()  # replaces the process; nothing below runs
             except OSError as exc:

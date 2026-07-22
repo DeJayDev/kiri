@@ -52,6 +52,10 @@ async def start():
             channel = resume.take()
             if channel is None:
                 return
+            # This runs concurrently with transport.run(), so the first send of the
+            # boot has to wait for the transport to be connected.
+            await transport.ready()
+            await transport.send(channel, "reloaded.")
             session = sessions.get(channel)
             try:
                 reply = await conversation.run_turn(session, None, store, mcp_tools, transport)
@@ -60,9 +64,8 @@ async def start():
                 await transport.send(channel, f"error: {exc}")
                 return
             sessions.save(session)
-            # Never come back from a restart silent: if the resumed turn produced no
-            # text of its own, the owner still hears that it is back.
-            await transport.send(channel, reply or "back up.")
+            if reply:
+                await transport.send(channel, reply)
 
         serve = asyncio.create_task(transport.run(dispatcher.on_message))
 
