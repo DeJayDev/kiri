@@ -45,6 +45,7 @@ async def run(args):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         executable="/bin/bash",
+        env={**os.environ, "KIRI": "1"},
         # Its own process group, so a timeout kills the whole tree and not just
         # the shell that spawned it.
         start_new_session=True,

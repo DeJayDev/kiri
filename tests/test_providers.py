@@ -70,6 +70,36 @@ def test_to_messages_joins_system_segments():
     assert out[0]["content"] == "BASE\n\nSUMMARY"
 
 
+def test_to_messages_translates_an_image_user_turn():
+    msgs = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "QUJD"}},
+                {"type": "text", "text": "what is this"},
+            ],
+        }
+    ]
+    out = openai.to_messages("S", msgs)
+    assert [p["type"] for p in out[1]["content"]] == ["image_url", "text"]
+    assert out[1]["content"][0]["image_url"]["url"] == "data:image/png;base64,QUJD"
+
+
+def test_anthropic_leaves_image_blocks_untouched():
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "QUJD"}},
+                {"type": "text", "text": "hi"},
+            ],
+        }
+    ]
+    out = anthropic._messages(messages)
+    assert out[-1]["content"][0] == messages[0]["content"][0]
+    assert out[-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
 def test_to_messages_tool_only_assistant_has_null_content():
     msgs = [{"role": "assistant", "content": [{"type": "tool_use", "id": "a", "name": "x", "input": {}}]}]
     out = openai.to_messages("S", msgs)

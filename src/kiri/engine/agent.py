@@ -2,11 +2,11 @@ from kiri.engine import llm
 from kiri.tools.reload import Restart
 
 
-async def run(session, user_text, registry, notify):
+async def run(session, user_text, registry, notify, images=None):
     if user_text is None:
         session.seal_dangling_tools()
     else:
-        session.append_user(user_text)
+        session.append_user(user_text, images)
 
     while True:
         # Before every request, so both tool loops and pure chat stay bounded.

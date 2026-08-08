@@ -37,7 +37,9 @@ def to_messages(system, messages) -> list[dict[str, Any]]:
                 msg["tool_calls"] = calls
             out.append(msg)
             continue
-        for block in content:  # user turn carrying tool_result blocks
+        # A user turn carries tool_results (each its own tool message) and/or the
+        # owner's text and images. A restart-seal turn holds both at once.
+        for block in content:
             if block.get("type") == "tool_result":
                 out.append(
                     {
@@ -46,7 +48,20 @@ def to_messages(system, messages) -> list[dict[str, Any]]:
                         "content": block.get("content", ""),
                     }
                 )
+        parts = [_user_part(b) for b in content if b.get("type") in ("text", "image")]
+        if parts:
+            out.append({"role": "user", "content": parts})
     return out
+
+
+def _user_part(block):
+    if block["type"] == "image":
+        source = block["source"]
+        return {
+            "type": "image_url",
+            "image_url": {"url": f"data:{source['media_type']};base64,{source['data']}"},
+        }
+    return {"type": "text", "text": block["text"]}
 
 
 def to_tools(tools) -> list[dict[str, Any]] | None:

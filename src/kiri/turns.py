@@ -110,7 +110,7 @@ class Dispatcher:
                     return
 
                 try:
-                    reply = await self._turn(session, text)
+                    reply = await self._turn(session, text, inbound.images)
                 except AuthRequired as exc:
                     # Roll back first: the half-turn ends on a tool_use with no
                     # result, which the replay would 400 on.
@@ -118,7 +118,7 @@ class Dispatcher:
                     slow.cancel()  # a login prompt under a heartbeat reads as a hang
                     await self.reauth(channel, exc.provider)
                     session = self.sessions.get(channel)
-                    reply = await self._turn(session, text)
+                    reply = await self._turn(session, text, inbound.images)
 
             self.sessions.save(session)
             await self.transport.send(channel, reply)
@@ -154,9 +154,9 @@ class Dispatcher:
         finally:
             slow.cancel()
 
-    async def _turn(self, session, text):
+    async def _turn(self, session, text, images=None):
         return await conversation.run_turn(
-            session, text, self.store, self.mcp_tools, self.transport
+            session, text, self.store, self.mcp_tools, self.transport, images
         )
 
     async def _slow_note(self, channel):

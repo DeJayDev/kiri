@@ -87,7 +87,7 @@ def test_a_slow_turn_says_it_is_still_alive(rig, monkeypatch):
 
 def test_a_turn_runs_and_the_session_is_saved(rig, monkeypatch):
     dispatcher, transport, sessions = rig
-    monkeypatch.setattr(dispatcher, "_turn", lambda s, text: _reply(f"echo: {text}"))
+    monkeypatch.setattr(dispatcher, "_turn", lambda s, text, images=None: _reply(f"echo: {text}"))
 
     asyncio.run(_run(dispatcher, "hello"))
     assert transport.sent == ["echo: hello"]
@@ -97,7 +97,7 @@ def test_a_turn_runs_and_the_session_is_saved(rig, monkeypatch):
 def test_two_messages_in_one_loop_batch_are_answered_in_order(rig, monkeypatch):
     dispatcher, transport, _ = rig
 
-    async def turn(session, text):
+    async def turn(session, text, images=None):
         return f"reply to {text}"
 
     monkeypatch.setattr(dispatcher, "_turn", turn)
@@ -116,7 +116,7 @@ def test_a_message_mid_turn_queues_as_a_follow_up(rig, monkeypatch):
     dispatcher, transport, _ = rig
     started, release = asyncio.Event(), asyncio.Event()
 
-    async def turn(session, text):
+    async def turn(session, text, images=None):
         if text == "first":
             started.set()
             await release.wait()
@@ -139,7 +139,7 @@ def test_stop_clears_the_queue_and_cancels_the_running_turn(rig, monkeypatch):
     dispatcher, transport, sessions = rig
     started = asyncio.Event()
 
-    async def turn(session, text):
+    async def turn(session, text, images=None):
         started.set()
         await asyncio.sleep(3600)
 
@@ -167,7 +167,7 @@ def test_shutdown_cancellation_is_not_swallowed(rig, monkeypatch):
     dispatcher, _, sessions = rig
     started = asyncio.Event()
 
-    async def turn(session, text):
+    async def turn(session, text, images=None):
         started.set()
         await asyncio.sleep(3600)
 
@@ -189,7 +189,7 @@ def test_shutdown_cancellation_is_not_swallowed(rig, monkeypatch):
 def test_an_error_rolls_the_session_back(rig, monkeypatch):
     dispatcher, transport, sessions = rig
 
-    async def boom(session, text):
+    async def boom(session, text, images=None):
         raise RuntimeError("exa exploded")
 
     monkeypatch.setattr(dispatcher, "_turn", boom)
@@ -208,7 +208,7 @@ def test_expired_auth_logs_in_then_replays_the_same_turn(rig, monkeypatch):
 
     attempts = []
 
-    async def turn(session, text):
+    async def turn(session, text, images=None):
         attempts.append(text)
         if len(attempts) == 1:
             raise AuthRequired(_Provider(), "expired")
@@ -231,7 +231,7 @@ def test_reload_saves_the_turn_and_marks_a_resume(rig, monkeypatch):
     dispatcher, transport, sessions = rig
     restarted, marks = [], []
 
-    async def turn(session, text):
+    async def turn(session, text, images=None):
         raise Restart()
 
     monkeypatch.setattr(dispatcher, "_turn", turn)

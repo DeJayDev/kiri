@@ -1,3 +1,4 @@
+import base64
 import platform
 import socket
 from datetime import datetime, timezone
@@ -16,6 +17,17 @@ def environment():
 
 def _today():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _image_block(media_type, data):
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": base64.b64encode(data).decode(),
+        },
+    }
 
 
 class Session:
@@ -37,14 +49,17 @@ class Session:
             parts.append("Summary of earlier conversation:\n" + self.summary)
         return parts
 
-    def append_user(self, text):
+    def append_user(self, text, images=None):
         dated = f"{text}\n\nToday is {_today()} (UTC)."
         seals = self._dangling_tool_results()
-        if seals:
-            # An interrupted turn left an unanswered tool_use; fold its result into
-            # this same user turn, or the request 400s on the dangling call and two
-            # user turns stack back to back.
-            self.messages.append({"role": "user", "content": [*seals, {"type": "text", "text": dated}]})
+        blocks = [_image_block(media_type, data) for media_type, data in images or []]
+        if seals or blocks:
+            # Any list content forces the block form: a seal folds an interrupted
+            # turn's tool_result in here, or the request 400s on the dangling call
+            # and two user turns stack back to back.
+            self.messages.append(
+                {"role": "user", "content": [*seals, *blocks, {"type": "text", "text": dated}]}
+            )
             return
         self.messages.append({"role": "user", "content": dated})
 

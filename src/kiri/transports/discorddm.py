@@ -19,6 +19,14 @@ def _voice_attachment(message):
     return message.attachments[0]
 
 
+async def _images(message):
+    out = []
+    for attachment in message.attachments:
+        if (attachment.content_type or "").startswith("image/"):
+            out.append((attachment.content_type, await attachment.read()))
+    return out
+
+
 class _OtherModal(discord.ui.Modal):
     def __init__(self, view, question):
         super().__init__(title="Answer")
@@ -94,7 +102,12 @@ class _Client(discord.Client):
         voice = _voice_attachment(message)
         audio = await voice.read() if voice else None
         await self.transport._on_message(
-            Inbound(channel_id=message.channel.id, text=message.content.strip(), audio=audio)
+            Inbound(
+                channel_id=message.channel.id,
+                text=message.content.strip(),
+                audio=audio,
+                images=await _images(message) or None,
+            )
         )
 
 

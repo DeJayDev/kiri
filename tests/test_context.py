@@ -1,4 +1,5 @@
 import asyncio
+import base64
 
 from kiri import config
 from kiri.engine import llm
@@ -53,6 +54,16 @@ def test_a_normal_user_turn_stays_a_plain_string():
     session = Session(1, "base")
     session.append_user("hi")
     assert isinstance(session.messages[-1]["content"], str)
+
+
+def test_images_ride_as_blocks_ahead_of_the_text():
+    session = Session(1, "base")
+    session.append_user("what is this", images=[("image/png", b"PNG")])
+    content = session.messages[-1]["content"]
+    assert content[0]["type"] == "image"
+    assert content[0]["source"]["media_type"] == "image/png"
+    assert base64.b64decode(content[0]["source"]["data"]) == b"PNG"
+    assert content[-1]["type"] == "text" and "what is this" in content[-1]["text"]
 
 
 def test_seal_is_a_noop_when_the_last_turn_is_already_clean():

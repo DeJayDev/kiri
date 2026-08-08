@@ -19,7 +19,8 @@ class Transport:
 @dataclass
 class Inbound:
     # The transport resolves its own quirks first: audio is raw bytes, not a
-    # Discord attachment.
+    # Discord attachment; images are (media_type, bytes) pairs.
     channel_id: int
     text: str
     audio: bytes | None = None
+    images: list | None = None
