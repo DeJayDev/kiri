@@ -153,6 +153,25 @@ def test_openai_bad_json_args_fall_back_to_empty():
     assert next(b for b in out["content"] if b["type"] == "tool_use")["input"] == {}
 
 
+def test_openai_strips_a_leaked_control_token_from_text():
+    data = {
+        "choices": [{"finish_reason": "stop", "message": {"content": "here you go<|eof|>"}}],
+        "usage": {},
+    }
+    out = openai.OpenAI().from_response(data)
+    assert out["content"] == [{"type": "text", "text": "here you go"}]
+
+
+def test_openai_drops_a_reply_that_is_only_a_control_token():
+    data = {
+        "choices": [{"finish_reason": "stop", "message": {"content": "<|eof|>"}}],
+        "usage": {},
+    }
+    out = openai.OpenAI().from_response(data)
+    assert out["content"] == []
+    assert out["stop_reason"] == "end_turn"
+
+
 def test_openai_splits_cached_tokens_out_of_input():
     data = {
         "choices": [{"finish_reason": "stop", "message": {"content": "hi"}}],

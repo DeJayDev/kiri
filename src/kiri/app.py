@@ -95,6 +95,14 @@ async def start():
             resuming.cancel()
 
 
+# A scheduled job runs with no owner watching, so a silent finish reads as a
+# failure. Have it close every run with a status, even when nothing changed.
+_JOB_REPORT = (
+    "When you finish, end with one line stating what you checked and the result, "
+    "even if nothing changed or there is nothing to do."
+)
+
+
 async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
     transport = dispatcher.transport
     if job["cron"] is None:
@@ -105,7 +113,8 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
         # A fresh session per job, so it never pollutes the live DM conversation --
         # which is also why the retry below needs no rollback.
         session = Session(job["channel_id"], base_prompt)
-        return await conversation.run_turn(session, job["instruction"], store, mcp_tools, transport)
+        instruction = f"{job['instruction']}\n\n{_JOB_REPORT}"
+        return await conversation.run_turn(session, instruction, store, mcp_tools, transport)
 
     try:
         reply = await turn()

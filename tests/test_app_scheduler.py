@@ -52,7 +52,9 @@ def test_recurring_job_runs_through_agent(monkeypatch):
     asyncio.run(app.execute_job(job, "base", store, [], dispatcher))
 
     assert dispatcher.transport.sent == [(5, "done")]
-    assert calls == [(5, "tick", store, [])]
+    channel, text, passed_store, passed_tools = calls[0]
+    assert (channel, passed_store, passed_tools) == (5, store, [])
+    assert text == f"tick\n\n{app._JOB_REPORT}"
 
 
 def test_job_hitting_expired_auth_reauths_then_replays(monkeypatch):
@@ -74,7 +76,8 @@ def test_job_hitting_expired_auth_reauths_then_replays(monkeypatch):
     asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
 
     assert dispatcher.reauths == [(5, "xai")]
-    assert attempts == ["tick", "tick"]
+    replayed = f"tick\n\n{app._JOB_REPORT}"
+    assert attempts == [replayed, replayed]
     assert dispatcher.transport.sent == [(5, "done after login")]
 
 

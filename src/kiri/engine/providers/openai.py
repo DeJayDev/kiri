@@ -1,8 +1,13 @@
 import json
+import re
 from typing import Any
 
 from kiri import config, http
 from kiri.engine.providers.base import Provider, ProviderError, normalize_usage
+
+# Some OpenAI-compatible endpoints leak the model's end-of-turn control token
+# (e.g. <|eof|>, <|endoftext|>) into message content instead of stopping on it.
+_CONTROL = re.compile(r"<\|[^|>]*\|>")
 
 
 def to_messages(system, messages) -> list[dict[str, Any]]:
@@ -82,8 +87,9 @@ def to_tools(tools) -> list[dict[str, Any]] | None:
 
 def to_content(message) -> list[dict[str, Any]]:
     content = []
-    if message.get("content"):
-        content.append({"type": "text", "text": message["content"]})
+    text = _CONTROL.sub("", message.get("content") or "")
+    if text.strip():
+        content.append({"type": "text", "text": text})
     for call in message.get("tool_calls") or []:
         try:
             parsed = json.loads(call["function"].get("arguments") or "{}")
