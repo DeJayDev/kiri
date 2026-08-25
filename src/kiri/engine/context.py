@@ -49,25 +49,36 @@ class Session:
             parts.append("Summary of earlier conversation:\n" + self.summary)
         return parts
 
+    def _blocks(self, text, images):
+        blocks = [_image_block(media_type, data) for media_type, data in images or []]
+        if text:
+            blocks.append({"type": "text", "text": text})
+        return blocks
+
     def append_user(self, text, images=None):
         dated = f"{text}\n\nToday is {_today()} (UTC)."
         seals = self._dangling_tool_results()
-        blocks = [_image_block(media_type, data) for media_type, data in images or []]
-        if seals or blocks:
+        if seals or images:
             # Any list content forces the block form: a seal folds an interrupted
             # turn's tool_result in here, or the request 400s on the dangling call
             # and two user turns stack back to back.
-            self.messages.append(
-                {"role": "user", "content": [*seals, *blocks, {"type": "text", "text": dated}]}
-            )
+            self.messages.append({"role": "user", "content": [*seals, *self._blocks(dated, images)]})
             return
         self.messages.append({"role": "user", "content": dated})
 
     def append_assistant(self, content):
         self.messages.append({"role": "assistant", "content": content})
 
-    def append_tool_results(self, results):
-        self.messages.append({"role": "user", "content": results})
+    def append_nudge(self, text, images=None):
+        # A message the owner sent mid-turn. Only called after an assistant text
+        # turn, so it keeps role alternation valid; the tool-loop path folds nudges
+        # into the tool_result message instead.
+        blocks = self._blocks(text, images)
+        if blocks:
+            self.messages.append({"role": "user", "content": blocks})
+
+    def append_tool_results(self, results, text="", images=None):
+        self.messages.append({"role": "user", "content": [*results, *self._blocks(text, images)]})
 
     def _dangling_tool_results(self):
         # A restart can cut a turn between an assistant tool_use and its result; the
@@ -107,8 +118,10 @@ class Session:
         if cut <= 0:
             return
 
-        old, self.messages = self.messages[:cut], self.messages[cut:]
-        self.summary = await self._summarize(old)
+        # Summarize before dropping the span: if the summary call fails, the turn
+        # keeps its full history rather than losing the cut messages with no brief.
+        self.summary = await self._summarize(self.messages[:cut])
+        self.messages = self.messages[cut:]
 
     def _safe_cut(self):
         # Walk back to a real user turn: the retained tail must not start on an

@@ -135,6 +135,29 @@ def test_a_message_mid_turn_queues_as_a_follow_up(rig, monkeypatch):
     assert transport.sent == ["done: first", "done: second"]
 
 
+def test_mid_turn_messages_drain_as_one_nudge(rig):
+    dispatcher, _, _ = rig
+    dispatcher.pending[1] = [_msg("first extra"), _msg("second extra")]
+
+    text, images = asyncio.run(dispatcher._drain_nudges(1))
+    assert text == "first extra\n\nsecond extra"
+    assert images is None
+    assert dispatcher.pending[1] == []
+
+
+def test_a_voice_nudge_is_transcribed(rig, monkeypatch):
+    dispatcher, _, _ = rig
+
+    async def transcribe(audio):
+        return "spoken words"
+
+    monkeypatch.setattr(turns.stt, "transcribe", transcribe)
+    dispatcher.pending[1] = [Inbound(channel_id=1, text="", audio=b"raw")]
+
+    text, _ = asyncio.run(dispatcher._drain_nudges(1))
+    assert text == "spoken words"
+
+
 def test_stop_clears_the_queue_and_cancels_the_running_turn(rig, monkeypatch):
     dispatcher, transport, sessions = rig
     started = asyncio.Event()
@@ -200,7 +223,7 @@ def test_an_error_rolls_the_session_back(rig, monkeypatch):
     assert sessions.saved == []
 
 
-def test_expired_auth_logs_in_then_replays_the_same_turn(rig, monkeypatch):
+def test_expired_auth_logs_in_then_resumes_the_turn(rig, monkeypatch):
     dispatcher, transport, sessions = rig
 
     class _Provider:
@@ -212,7 +235,7 @@ def test_expired_auth_logs_in_then_replays_the_same_turn(rig, monkeypatch):
         attempts.append(text)
         if len(attempts) == 1:
             raise AuthRequired(_Provider(), "expired")
-        return f"done: {text}"
+        return "done"
 
     async def reauth(channel, provider):
         await transport.send(channel, f"{provider.name} login needed")
@@ -221,9 +244,10 @@ def test_expired_auth_logs_in_then_replays_the_same_turn(rig, monkeypatch):
     monkeypatch.setattr(dispatcher, "reauth", reauth)
 
     asyncio.run(_run(dispatcher, "what's on my calendar"))
-    assert attempts == ["what's on my calendar", "what's on my calendar"]
-    assert transport.sent == ["xai login needed", "done: what's on my calendar"]
-    assert sessions.dropped == [1]
+    # Second call resumes with no text, keeping the session it built the first time.
+    assert attempts == ["what's on my calendar", None]
+    assert transport.sent == ["xai login needed", "done"]
+    assert sessions.dropped == []
     assert sessions.saved == ["session-1"]
 
 

@@ -112,13 +112,13 @@ class Dispatcher:
                 try:
                     reply = await self._turn(session, text, inbound.images)
                 except AuthRequired as exc:
-                    # Roll back first: the half-turn ends on a tool_use with no
-                    # result, which the replay would 400 on.
-                    self.sessions.drop(channel)
                     slow.cancel()  # a login prompt under a heartbeat reads as a hang
                     await self.reauth(channel, exc.provider)
-                    session = self.sessions.get(channel)
-                    reply = await self._turn(session, text, inbound.images)
+                    # Resume, don't replay: the failed request never appended a
+                    # response, so the session still ends on a clean boundary and
+                    # the mid-turn checkpoints stay intact. Replaying the original
+                    # text would re-append it on top of them.
+                    reply = await self._turn(session, None)
 
             self.sessions.save(session)
             await self.transport.send(channel, reply)
@@ -155,9 +155,35 @@ class Dispatcher:
             slow.cancel()
 
     async def _turn(self, session, text, images=None):
+        async def nudges():
+            return await self._drain_nudges(session.channel_id)
+
+        async def persist():
+            self.sessions.save(session)
+
         return await conversation.run_turn(
-            session, text, self.store, self.mcp_tools, self.transport, images
+            session, text, self.store, self.mcp_tools, self.transport, images, nudges, persist
         )
+
+    async def _drain_nudges(self, channel):
+        # Messages the owner sent while this turn was running. on_message left them
+        # in the same queue _drain watches; draining them here folds them into the
+        # live turn, and anything that lands after the turn's last step falls back
+        # to _drain as a fresh turn.
+        queue = self.pending.get(channel)
+        if not queue:
+            return "", None
+        inbounds, queue[:] = queue[:], []
+        texts, images = [], []
+        for inbound in inbounds:
+            text = inbound.text
+            if inbound.audio:
+                text = await stt.transcribe(inbound.audio)
+            if inbound.images:
+                images.extend(inbound.images)
+            if text:
+                texts.append(text)
+        return "\n\n".join(texts), images or None
 
     async def _slow_note(self, channel):
         minutes = 1
