@@ -37,6 +37,8 @@ def mcp(args):
     if name not in servers:
         known = ", ".join(servers) or "none"
         raise SystemExit(f"no remote mcp server '{name}' in {config.MCP_CONFIG} (have: {known})")
+    if servers[name].get("headers"):
+        raise SystemExit(f"mcp server '{name}' authenticates with headers in {config.MCP_CONFIG}, not oauth")
 
     tools = asyncio.run(mcp_auth.login(name, servers[name]["url"]))
     print(f"authorized. {name} exposes {len(tools)} tools: {', '.join(tools[:8])}")
