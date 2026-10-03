@@ -52,6 +52,13 @@ async def _connect(name, spec, stack):
         read, write = await stack.enter_async_context(stdio_client(params))
         return read, write
 
+    if spec.get("headers"):
+        client = create_mcp_http_client(headers=spec["headers"])
+        read, write, _ = await stack.enter_async_context(
+            streamable_http_client(spec["url"], http_client=client)
+        )
+        return read, write
+
     # A remote server with no stored token needs a browser, which boot can't do.
     # Skip it and say so rather than hanging the bot on a login it can't perform.
     if not credentials.get(mcp_auth.key(name)):

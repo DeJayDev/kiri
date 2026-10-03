@@ -49,6 +49,8 @@ def _list_mcp(servers):
         return
     for name in sorted(servers):
         state = "authorized" if credentials.get(mcp_auth.key(name)) else "not authorized"
+        if servers[name].get("headers"):
+            state = "headers"
         print(f"  {name:<12}{state}")
     print("\n`kiri mcp <server>` to authorize")
 
