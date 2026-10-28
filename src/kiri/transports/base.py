@@ -29,3 +29,4 @@ class Inbound:
     text: str
     audio: bytes | None = None
     images: list | None = None
+    quote: str | None = None

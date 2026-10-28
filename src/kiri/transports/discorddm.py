@@ -160,8 +160,29 @@ class _Client(discord.Client):
                 text=message.content.strip(),
                 audio=audio,
                 images=await _images(message) or None,
+                quote=await self._quote(message),
             )
         )
+
+    async def _quote(self, message):
+        if message.reference is None or message.reference.message_id is None:
+            return None
+        try:
+            quoted = await message.channel.fetch_message(message.reference.message_id)
+        except discord.NotFound:
+            return "In reply to a message that has since been deleted."
+
+        body = [quoted.content] if quoted.content else []
+        for attachment in quoted.attachments:
+            if (attachment.content_type or "").startswith("text/"):
+                body.append((await attachment.read()).decode("utf-8", "replace"))
+            else:
+                body.append(f"[attachment: {attachment.filename}]")
+        lines = "\n".join(f"> {line}" for line in "\n".join(body).splitlines())
+
+        if quoted.author == self.user:
+            return f"In reply to your message:\n{lines}"
+        return f"In reply to my earlier message:\n{lines}"
 
 
 class DiscordDM(Transport):

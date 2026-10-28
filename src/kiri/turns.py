@@ -32,6 +32,12 @@ def _expand_skill(text):
     return message, None
 
 
+def _with_quote(inbound, text):
+    if not inbound.quote:
+        return text
+    return f"{inbound.quote}\n\n{text}"
+
+
 class Dispatcher:
     def __init__(self, transport, sessions, store, mcp_tools):
         self.transport = transport
@@ -108,6 +114,7 @@ class Dispatcher:
                 if err:
                     await self.transport.send(channel, err)
                     return
+                text = _with_quote(inbound, text)
 
                 try:
                     reply = await self._turn(session, text, inbound.images)
@@ -182,6 +189,7 @@ class Dispatcher:
                 text = await stt.transcribe(inbound.audio)
             if inbound.images:
                 images.extend(inbound.images)
+            text = _with_quote(inbound, text)
             if text:
                 texts.append(text)
         return "\n\n".join(texts), images or None

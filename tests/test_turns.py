@@ -158,6 +158,33 @@ def test_a_voice_nudge_is_transcribed(rig, monkeypatch):
     assert text == "spoken words"
 
 
+def test_a_reply_carries_the_quoted_message_ahead_of_the_text(rig, monkeypatch):
+    dispatcher, transport, _ = rig
+    monkeypatch.setattr(dispatcher, "_turn", lambda s, text, images=None: _reply(text))
+    inbound = Inbound(channel_id=1, text="which ones?", quote="In reply to your message:\n> 3 PRs")
+
+    async def _go():
+        await (await dispatcher.on_message(inbound))
+
+    asyncio.run(_go())
+    assert transport.sent == ["In reply to your message:\n> 3 PRs\n\nwhich ones?"]
+
+
+def test_a_voice_reply_keeps_its_quote(rig, monkeypatch):
+    dispatcher, _, _ = rig
+
+    async def transcribe(audio):
+        return "spoken words"
+
+    monkeypatch.setattr(turns.stt, "transcribe", transcribe)
+    dispatcher.pending[1] = [
+        Inbound(channel_id=1, text="", audio=b"raw", quote="In reply to your message:\n> hi")
+    ]
+
+    text, _ = asyncio.run(dispatcher._drain_nudges(1))
+    assert text == "In reply to your message:\n> hi\n\nspoken words"
+
+
 def test_stop_clears_the_queue_and_cancels_the_running_turn(rig, monkeypatch):
     dispatcher, transport, sessions = rig
     started = asyncio.Event()
