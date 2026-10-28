@@ -5,6 +5,7 @@ from kiri import resume, spans, stt
 from kiri.auth.login import login
 from kiri.engine import conversation
 from kiri.engine.providers.base import AuthRequired
+from kiri.scheduling import events
 from kiri.skills import catalog
 from kiri.tools import ask, reload
 from kiri.tools.reload import Restart
@@ -109,6 +110,10 @@ class Dispatcher:
         if command == "/new":
             self.sessions.reset(channel)
             await self.transport.send(channel, "fresh session.")
+            return
+        if command.startswith("/bg") and command[3:4].isspace():
+            events.put(inbound.text.strip()[3:].strip())
+            await self.transport.send(channel, "started in the background.")
             return
 
         session = self.sessions.get(channel)

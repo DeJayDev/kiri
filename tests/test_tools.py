@@ -8,7 +8,7 @@ from kiri.tools import shell, web
 
 
 def test_registry_unknown_tool_returns_error():
-    registry = tools.build(store=None, channel_id=1, mcp_tools=[], transport=None)
+    registry = tools.build(store=None, channel_id=1, mcp_tools=[], transport=None, base_system="base")
     assert "unknown tool" in asyncio.run(registry.run("nope", {}))
 
 
@@ -17,7 +17,7 @@ def test_registry_merges_mcp_tools():
         return "mcp-ok"
 
     schema = {"name": "srv__t", "description": "", "input_schema": {"type": "object"}}
-    registry = tools.build(store=None, channel_id=1, mcp_tools=[(schema, runner)], transport=None)
+    registry = tools.build(store=None, channel_id=1, mcp_tools=[(schema, runner)], transport=None, base_system="base")
     assert "srv__t" in {s["name"] for s in registry.schemas()}
     assert asyncio.run(registry.run("srv__t", {})) == "mcp-ok"
 

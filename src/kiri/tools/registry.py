@@ -2,7 +2,7 @@ import time
 
 from kiri import spans
 from kiri.scheduling import tool as scheduler
-from kiri.tools import ask, history, reload, send_file, shell, web
+from kiri.tools import ask, history, reload, send_file, shell, task, web
 
 
 class Registry:
@@ -31,7 +31,7 @@ class Registry:
             spans.record("tool", name, (time.monotonic() - started) * 1000, ok)
 
 
-def build(store, channel_id, mcp_tools, transport):
+def build(store, channel_id, mcp_tools, transport, base_system):
     # Built per channel so scheduler tools deliver to the right DM. mcp_tools is
     # a shared list of (schema, runner) loaded once at startup.
     registry = Registry()
@@ -41,6 +41,10 @@ def build(store, channel_id, mcp_tools, transport):
     registry.add(send_file.SCHEMA, send_file.build(transport, channel_id))
     registry.add(history.SCHEMA, history.build(channel_id))
 
+    def fresh():
+        return build(store, channel_id, mcp_tools, transport, base_system)
+
+    registry.add(task.SCHEMA, task.build(channel_id, base_system, fresh))
     registry.add(web.SEARCH_SCHEMA, web.search)
     registry.add(web.FETCH_SCHEMA, web.fetch)
     for schema, runner in scheduler.build(store, channel_id):

@@ -1,4 +1,5 @@
 import os
+import time
 
 from kiri import config
 
@@ -19,3 +20,10 @@ def take():
         claimed.append((name, body))
     return claimed
 
+
+def put(body):
+    name = f"task-{time.time_ns()}.md"
+    staged = os.path.join(config.EVENTS_DIR, f".{name}")
+    with open(staged, "w") as f:
+        f.write(body)
+    os.replace(staged, os.path.join(config.EVENTS_DIR, name))

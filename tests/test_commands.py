@@ -1,8 +1,10 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
-from kiri import resume, turns
+from kiri import config, resume, turns
 from kiri.engine.sessions import SessionStore
+from kiri.scheduling import events
 from kiri.tools import ask
 from kiri.transports.base import Inbound
 
@@ -119,3 +121,17 @@ def test_the_heartbeat_names_a_pending_question_instead_of_working(monkeypatch):
 
     assert transport.sent == ["waiting on your answer: ship it?"]
 
+
+def test_bg_starts_a_background_task_without_a_turn(monkeypatch):
+    dispatcher, transport, _ = _dispatcher()
+    os.makedirs(config.EVENTS_DIR)
+
+    async def turn(session, text, images=None):
+        raise AssertionError("nothing should run")
+
+    monkeypatch.setattr(dispatcher, "_turn", turn)
+    _say(dispatcher, "/bg\nCheck the Build")
+
+    assert transport.sent == ["started in the background."]
+    [(_, body)] = events.take()
+    assert body == "Check the Build"
