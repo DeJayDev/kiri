@@ -145,6 +145,6 @@ def test_job_output_is_folded_into_the_next_owner_turn(monkeypatch):
     dispatcher.session.append_user("which ones?")
 
     content = dispatcher.session.messages[0]["content"]
-    assert "check PRs" in content and "3 PRs need review" in content
+    assert "3 PRs need review" in content and "do not reply to it" in content
     assert content.index("3 PRs need review") < content.index("which ones?")
     assert dispatcher.session.notes == []

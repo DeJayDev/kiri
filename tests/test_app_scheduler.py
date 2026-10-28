@@ -120,3 +120,38 @@ def test_reload_in_a_scheduled_job_says_so_instead_of_an_empty_error(monkeypatch
 
     (_channel, reply), = dispatcher.transport.sent
     assert "reload not available from a job" in reply
+
+
+def test_a_detached_run_takes_its_instruction_verbatim_and_notes_the_delivery(monkeypatch):
+    calls = []
+
+    async def fake_run_turn(session, text, store, mcp_tools, transport):
+        calls.append(text)
+        return "background task ok"
+
+    monkeypatch.setattr(app.conversation, "run_turn", fake_run_turn)
+    dispatcher = _Dispatcher()
+
+    asyncio.run(app.run_detached(5, "say exactly: background task ok", "base", None, [], dispatcher))
+
+    assert calls == ["say exactly: background task ok"]
+    assert dispatcher.transport.sent == [(5, "background task ok")]
+    [note] = dispatcher.sessions.session.notes
+    assert "do not reply to it or send it again" in note
+    assert note.endswith("\n\nbackground task ok")
+    assert "say exactly" not in note
+
+
+def test_a_failed_detached_run_notes_the_error_without_calling_it_a_record(monkeypatch):
+    async def boom(*args, **kwargs):
+        raise RuntimeError("tool exploded")
+
+    monkeypatch.setattr(app.conversation, "run_turn", boom)
+    dispatcher = _Dispatcher()
+    job = {"id": 1, "cron": "* * * * *", "instruction": "check PRs", "channel_id": 5, "next_run": time.time()}
+
+    asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
+
+    [note] = dispatcher.sessions.session.notes
+    assert "failed" in note and "job error: tool exploded" in note and "check PRs" in note
+    assert "do not reply" not in note

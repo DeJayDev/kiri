@@ -41,8 +41,7 @@ async def start():
 
         async def execute_event(name, body):
             channel = await transport.owner_channel()
-            instruction = f"An event arrived as {name}:\n\n{body}"
-            await run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher)
+            await run_detached(channel, body, base_prompt, store, mcp_tools, dispatcher)
 
         async def supervised_scheduler():
             # A crash in the scheduler would otherwise die silently in its task;
@@ -132,10 +131,10 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
     instruction = job["instruction"]
     if late:
         instruction = f"This job was due {due} and is running late because you were down.\n\n{instruction}"
-    await run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher)
+    await run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher, report=True)
 
 
-async def run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher):
+async def run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher, report=False):
     transport = dispatcher.transport
     session = None
 
@@ -144,14 +143,16 @@ async def run_detached(channel, instruction, base_prompt, store, mcp_tools, disp
         # A fresh session per run, so it never pollutes the live DM conversation --
         # which is also why the retry below needs no rollback.
         session = Session(channel, base_prompt)
-        text = f"{instruction}\n\n{_JOB_REPORT}"
+        text = f"{instruction}\n\n{_JOB_REPORT}" if report else instruction
         return await conversation.run_turn(session, text, store, mcp_tools, transport)
 
+    failed = False
     try:
         reply = await turn()
     except Restart:
         # A job has no owner watching, and restarting mid-turn would drop whatever
         # else is in flight. Reload is a live-conversation action.
+        failed = True
         reply = "job error: reload not available from a job; ask in the DM"
     except AuthRequired as exc:
         # A job firing while the owner is asleep waits out the device code's expiry
@@ -160,8 +161,10 @@ async def run_detached(channel, instruction, base_prompt, store, mcp_tools, disp
             await dispatcher.reauth(channel, exc.provider)
             reply = await turn()
         except Exception as retry_error:
+            failed = True
             reply = f"job error: {retry_error}"
     except Exception as exc:
+        failed = True
         reply = f"job error: {exc}"
 
     if reply is not None:
@@ -169,5 +172,14 @@ async def run_detached(channel, instruction, base_prompt, store, mcp_tools, disp
     dispatcher.sessions.archive(channel, [*session.archived, *session.messages])
     # None means the live preview already showed it; the run's session holds the text.
     delivered = reply if reply is not None else llm.text_of(session.messages[-1]["content"])
-    note = f"While you were idle, this ran on its own:\n{instruction}\n\nIt sent the owner:\n{delivered}"
+    if failed:
+        note = (
+            "A background run failed, and the owner was already sent the error below. "
+            f"Bring it up if it bears on what they say next.\n\nIt was running:\n{instruction}\n\n{delivered}"
+        )
+    else:
+        note = (
+            "A background run already sent the owner the text below, and they have it. "
+            f"It is a record, not a message: do not reply to it or send it again.\n\n{delivered}"
+        )
     dispatcher.sessions.get(channel).note(note)
