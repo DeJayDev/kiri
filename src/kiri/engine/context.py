@@ -1,9 +1,8 @@
 import base64
 import platform
 import socket
-from datetime import datetime, timezone
 
-from kiri import config
+from kiri import clock, config
 from kiri.engine import llm
 
 
@@ -13,10 +12,6 @@ def environment():
         f"Your long-term memory is flat files under {config.MEMORY_DIR}; "
         "read and update it with the shell (rg, cat, write)."
     )
-
-
-def _today():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def _image_block(media_type, data):
@@ -36,15 +31,15 @@ class Session:
         self.base_system = base_system
         self.messages = []
         self.summary = ""
-        self.pinned = []
+        self.notes = []
+        # Messages compaction cut, waiting for the store to archive them on save.
+        self.archived = []
         self.last_input_tokens = 0
 
     def system(self):
         # Ordered segments, stable first. A caching provider breakpoints the last
         # one, so nothing per-request may appear here.
         parts = [self.base_system, environment()]
-        if self.pinned:
-            parts.append("Pinned by the user:\n" + "\n".join(self.pinned))
         if self.summary:
             parts.append("Summary of earlier conversation:\n" + self.summary)
         return parts
@@ -55,8 +50,22 @@ class Session:
             blocks.append({"type": "text", "text": text})
         return blocks
 
+    def unanswered(self):
+        # Checkpoints land at the top of each model request, so a saved session that
+        # ends on a user turn is one whose request never got its response.
+        return bool(self.messages) and self.messages[-1]["role"] == "user"
+
+    def note(self, text):
+        # Something delivered outside this conversation, such as a job's output.
+        # Folded into the next owner turn rather than appended now: a turn may be
+        # mid-flight, and a message of its own would break role alternation.
+        self.notes.append(text)
+
     def append_user(self, text, images=None):
-        dated = f"{text}\n\nToday is {_today()} (UTC)."
+        if self.notes:
+            text = "\n\n".join([*self.notes, text])
+            self.notes = []
+        dated = f"{text}\n\nToday is {clock.today()} ({config.TIMEZONE})."
         seals = self._dangling_tool_results()
         if seals or images:
             # Any list content forces the block form: a seal folds an interrupted
@@ -121,6 +130,7 @@ class Session:
         # Summarize before dropping the span: if the summary call fails, the turn
         # keeps its full history rather than losing the cut messages with no brief.
         self.summary = await self._summarize(self.messages[:cut])
+        self.archived.extend(self.messages[:cut])
         self.messages = self.messages[cut:]
 
     def _safe_cut(self):
@@ -164,5 +174,15 @@ def _render(messages):
             elif kind == "tool_use":
                 lines.append(f"{m['role']} -> tool {block['name']}({block.get('input', {})})")
             elif kind == "tool_result":
-                lines.append(f"tool_result: {block.get('content', '')}")
+                lines.append(f"tool_result: {_stub(block.get('content', ''))}")
+            elif kind == "image":
+                lines.append(f"{m['role']}: [image]")
     return "\n".join(lines)
+
+
+def _stub(content):
+    if not isinstance(content, str):
+        content = " ".join(b.get("text", "[image]") for b in content)
+    if len(content) <= 500:
+        return content
+    return f"{content[:500]} [... {len(content) - 500} more chars]"

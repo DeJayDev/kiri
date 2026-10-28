@@ -1,7 +1,7 @@
 import asyncio
 import io
 
-from kiri import config
+from kiri import config, spans
 
 # On-device speech-to-text via faster-whisper (CTranslate2). The model is a
 # heavy optional dependency, so it's lazy-loaded the first time a voice message
@@ -38,4 +38,5 @@ def _transcribe_sync(audio):
 
 async def transcribe(audio):
     # Transcription is CPU-bound and blocking; keep it off the event loop.
-    return await asyncio.to_thread(_transcribe_sync, audio)
+    async with spans.timed("stt", config.STT_MODEL):
+        return await asyncio.to_thread(_transcribe_sync, audio)

@@ -41,6 +41,11 @@ SCHEMA = {
 }
 
 
+# channel -> the question a turn is blocked on, so the heartbeat can say the turn
+# is waiting on the owner rather than working.
+waiting = {}
+
+
 def build(transport, channel_id):
     async def ask(args):
         options = args["options"]
@@ -48,12 +53,16 @@ def build(transport, channel_id):
             return "error: ask needs at least one option; with none, put the question in your reply"
         if len(options) > 5:
             return f"error: ask takes at most 5 options, not {len(options)}; narrow the question"
-        answer = await transport.ask(
-            channel_id,
-            args["question"],
-            options,
-            bool(args.get("multi_select")),
-        )
+        waiting[channel_id] = args["question"]
+        try:
+            answer = await transport.ask(
+                channel_id,
+                args["question"],
+                options,
+                bool(args.get("multi_select")),
+            )
+        finally:
+            waiting.pop(channel_id, None)
         return answer or "error: the owner gave no answer"
 
     return ask

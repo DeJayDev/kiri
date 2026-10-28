@@ -44,16 +44,18 @@ def to_messages(system, messages) -> list[dict[str, Any]]:
             continue
         # A user turn carries tool_results (each its own tool message) and/or the
         # owner's text and images. A restart-seal turn holds both at once.
+        # Chat Completions tool messages are text-only, so an image a tool returned
+        # rides in the user message that follows them.
+        tool_images = []
         for block in content:
             if block.get("type") == "tool_result":
-                out.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": block["tool_use_id"],
-                        "content": block.get("content", ""),
-                    }
-                )
-        parts = [_user_part(b) for b in content if b.get("type") in ("text", "image")]
+                result = block.get("content", "")
+                if not isinstance(result, str):
+                    tool_images.extend(b for b in result if b["type"] == "image")
+                    result = "\n".join(b["text"] for b in result if b["type"] == "text")
+                out.append({"role": "tool", "tool_call_id": block["tool_use_id"], "content": result})
+        owner = [b for b in content if b.get("type") in ("text", "image")]
+        parts = [_user_part(b) for b in [*tool_images, *owner]]
         if parts:
             out.append({"role": "user", "content": parts})
     return out

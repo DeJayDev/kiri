@@ -1,7 +1,9 @@
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 from croniter import croniter
+
+from kiri import clock, config
 
 
 def _parse_when(value):
@@ -15,24 +17,20 @@ def _parse_when(value):
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=clock.zone())
     return dt.timestamp()
-
-
-def _fmt_utc(epoch):
-    return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 SCHEDULE_SCHEMA = {
     "name": "schedule_job",
     "description": (
         "Persist a recurring job. When it fires, the stored instruction runs and "
-        "the result is delivered to this DM. Cron is standard 5-field, UTC."
+        f"the result is delivered to this DM. Cron is standard 5-field, in {config.TIMEZONE}."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "cron": {"type": "string", "description": "5-field cron, UTC (e.g. '0 13 * * *')."},
+            "cron": {"type": "string", "description": f"5-field cron in {config.TIMEZONE} (e.g. '0 9 * * *')."},
             "instruction": {"type": "string", "description": "What to run when it fires."},
         },
         "required": ["cron", "instruction"],
@@ -44,7 +42,7 @@ REMIND_SCHEMA = {
     "description": (
         "Set a one-shot reminder. At the given time the instruction is delivered "
         "to this DM as reminder text, then the reminder is deleted. You "
-        "compute the absolute UTC time from whatever the user said (e.g. 'in 10 "
+        "compute the absolute time from whatever the user said (e.g. 'in 10 "
         "minutes', 'tomorrow 9am') and pass it here."
     ),
     "input_schema": {
@@ -52,7 +50,10 @@ REMIND_SCHEMA = {
         "properties": {
             "when": {
                 "type": "string",
-                "description": "Absolute time: ISO 8601 UTC (e.g. '2026-06-26T09:00:00Z') or epoch seconds.",
+                "description": (
+                    f"Absolute time: ISO 8601 (e.g. '2026-06-26T09:00:00'), read as {config.TIMEZONE} "
+                    "unless it carries an offset, or epoch seconds."
+                ),
             },
             "instruction": {
                 "type": "string",
@@ -93,12 +94,12 @@ def build(store, channel_id):
         if when is None:
             return (
                 f"error: couldn't parse when '{args['when']}' "
-                "(use ISO 8601 UTC like '2026-06-26T09:00:00Z' or epoch seconds)"
+                "(use ISO 8601 like '2026-06-26T09:00:00' or epoch seconds)"
             )
         if when <= time.time():
             return "error: that time is in the past"
         job_id = store.add_once(when, args["instruction"], channel_id)
-        return f"reminder {job_id} set for {_fmt_utc(when)}: {args['instruction']}"
+        return f"reminder {job_id} set for {clock.stamp(when)}: {args['instruction']}"
 
     async def list_jobs(args):
         rows = store.list(channel_id)
@@ -121,4 +122,4 @@ def build(store, channel_id):
 def _fmt_row(row):
     if row["cron"]:
         return f"{row['id']}: '{row['cron']}' -> {row['instruction']}"
-    return f"{row['id']}: once @ {_fmt_utc(row['next_run'])} -> {row['instruction']}"
+    return f"{row['id']}: once @ {clock.stamp(row['next_run'])} -> {row['instruction']}"

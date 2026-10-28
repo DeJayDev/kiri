@@ -245,7 +245,7 @@ def test_an_error_rolls_the_session_back(rig, monkeypatch):
     monkeypatch.setattr(dispatcher, "_turn", boom)
 
     asyncio.run(_run(dispatcher, "search"))
-    assert transport.sent == ["error: exa exploded"]
+    assert transport.sent == ["error: exa exploded\nsend /retry to pick up from the last checkpoint."]
     assert sessions.dropped == [1]
     assert sessions.saved == []
 

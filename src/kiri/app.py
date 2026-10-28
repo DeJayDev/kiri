@@ -1,9 +1,10 @@
 import asyncio
 import signal
+import time
 import traceback
 from contextlib import AsyncExitStack
 
-from kiri import config, db, http, mcp_client, resume, usage
+from kiri import clock, config, db, http, mcp_client, resume, spans, usage
 from kiri.engine import conversation, llm, prompt
 from kiri.engine.context import Session
 from kiri.engine.providers import registry as providers
@@ -22,7 +23,7 @@ async def start():
 
     chat = providers.build(config.PROVIDER)
     summarizer = providers.build(config.SUMMARY_PROVIDER) if config.SUMMARY_PROVIDER else chat
-    llm.use(chat, summarizer, sink=usage.record)
+    llm.use(chat, summarizer, sink=usage.record, timer=spans.record)
 
     base_prompt = "\n\n".join(filter(None, [prompt.load(), catalog.index()]))
     sessions = SessionStore(base_prompt)
@@ -38,22 +39,35 @@ async def start():
         async def execute(job):
             await execute_job(job, base_prompt, store, mcp_tools, dispatcher)
 
+        async def execute_event(name, body):
+            channel = await transport.owner_channel()
+            instruction = f"An event arrived as {name}:\n\n{body}"
+            await run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher)
+
         async def supervised_scheduler():
             # A crash in the scheduler would otherwise die silently in its task;
             # surface it to the owner so reminders/jobs going dark is visible.
             try:
-                await run_scheduler(store, execute)
+                await run_scheduler(store, execute, execute_event)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 await transport.notify_owner(f"scheduler crashed:\n{traceback.format_exc()}")
 
         async def resume_pending():
+            interrupted = resume.take_inflight()
             channel = resume.take()
-            if channel is None:
-                return
             # This runs concurrently with transport.run(), so the first send of the
             # boot has to wait for the transport to be connected.
+            if channel is None:
+                if interrupted is not None:
+                    await transport.ready()
+                    await transport.send(
+                        interrupted,
+                        "I went down mid-turn without a clean shutdown. "
+                        "Send /retry to pick up from the last checkpoint.",
+                    )
+                return
             await transport.ready()
             await transport.send(channel, "reloaded.")
             session = sessions.get(channel)
@@ -104,17 +118,34 @@ _JOB_REPORT = (
 
 
 async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
-    transport = dispatcher.transport
+    channel = job["channel_id"]
+    late = time.time() - job["next_run"] > 60
+    due = clock.stamp(job["next_run"])
     if job["cron"] is None:
-        await transport.send(job["channel_id"], f"reminder: {job['instruction']}")
+        text = f"reminder: {job['instruction']}"
+        if late:
+            text += f"\n(late: it was due {due}, while I was down)"
+        await dispatcher.transport.send(channel, text)
+        dispatcher.sessions.get(channel).note(f"You sent the owner this reminder: {text}")
         return
 
+    instruction = job["instruction"]
+    if late:
+        instruction = f"This job was due {due} and is running late because you were down.\n\n{instruction}"
+    await run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher)
+
+
+async def run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher):
+    transport = dispatcher.transport
+    session = None
+
     async def turn():
-        # A fresh session per job, so it never pollutes the live DM conversation --
+        nonlocal session
+        # A fresh session per run, so it never pollutes the live DM conversation --
         # which is also why the retry below needs no rollback.
-        session = Session(job["channel_id"], base_prompt)
-        instruction = f"{job['instruction']}\n\n{_JOB_REPORT}"
-        return await conversation.run_turn(session, instruction, store, mcp_tools, transport)
+        session = Session(channel, base_prompt)
+        text = f"{instruction}\n\n{_JOB_REPORT}"
+        return await conversation.run_turn(session, text, store, mcp_tools, transport)
 
     try:
         reply = await turn()
@@ -126,11 +157,17 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
         # A job firing while the owner is asleep waits out the device code's expiry
         # and then fails: it never hangs, and never fires hours stale.
         try:
-            await dispatcher.reauth(job["channel_id"], exc.provider)
+            await dispatcher.reauth(channel, exc.provider)
             reply = await turn()
         except Exception as retry_error:
             reply = f"job error: {retry_error}"
     except Exception as exc:
         reply = f"job error: {exc}"
+
     if reply is not None:
-        await transport.send(job["channel_id"], reply)
+        await transport.send(channel, reply)
+    dispatcher.sessions.archive(channel, [*session.archived, *session.messages])
+    # None means the live preview already showed it; the run's session holds the text.
+    delivered = reply if reply is not None else llm.text_of(session.messages[-1]["content"])
+    note = f"While you were idle, this ran on its own:\n{instruction}\n\nIt sent the owner:\n{delivered}"
+    dispatcher.sessions.get(channel).note(note)

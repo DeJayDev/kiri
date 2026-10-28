@@ -1,5 +1,8 @@
+import time
+
+from kiri import spans
 from kiri.scheduling import tool as scheduler
-from kiri.tools import ask, reload, shell, web
+from kiri.tools import ask, history, reload, send_file, shell, web
 
 
 class Registry:
@@ -17,7 +20,15 @@ class Registry:
         if not entry:
             return f"error: unknown tool {name}"
         _, runner = entry
-        return await runner(args)
+        started = time.monotonic()
+        ok = False
+        try:
+            output = await runner(args)
+            # Tools report failure as an "error: ..." result, not an exception.
+            ok = not str(output).startswith("error")
+            return output
+        finally:
+            spans.record("tool", name, (time.monotonic() - started) * 1000, ok)
 
 
 def build(store, channel_id, mcp_tools, transport):
@@ -27,6 +38,9 @@ def build(store, channel_id, mcp_tools, transport):
     registry.add(shell.SCHEMA, shell.run)
     registry.add(reload.SCHEMA, reload.run)
     registry.add(ask.SCHEMA, ask.build(transport, channel_id))
+    registry.add(send_file.SCHEMA, send_file.build(transport, channel_id))
+    registry.add(history.SCHEMA, history.build(channel_id))
+
     registry.add(web.SEARCH_SCHEMA, web.search)
     registry.add(web.FETCH_SCHEMA, web.fetch)
     for schema, runner in scheduler.build(store, channel_id):

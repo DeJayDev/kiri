@@ -1,6 +1,10 @@
 # Copy to ./kiri.toml, ~/.kiri/config.toml, or $KIRI_CONFIG.
 # Env vars override every value.
 
+# IANA zone for the date Kiri sees each turn, cron, and reminder times. Never read
+# from the host, which is often UTC. KIRI_TIMEZONE overrides.
+timezone = "UTC"
+
 [transport]
 # discord | terminal
 name = "discord"

@@ -86,6 +86,8 @@ def test_compaction_reports_its_tokens_to_the_usage_sink(monkeypatch):
     monkeypatch.setattr(config, "MODEL_CONTEXT", 100)
 
     class _Provider:
+        name = "fake"
+
         async def complete(self, system, messages, tools, model=None, on_text=None):
             return {
                 "content": [{"type": "text", "text": "BRIEF"}],
@@ -113,3 +115,25 @@ def test_context_size_counts_cached_tokens(monkeypatch):
         {"input_tokens": 200, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 150000}
     )
     assert session.last_input_tokens == 151200
+
+
+def test_the_turn_header_names_the_owners_zone_and_weekday(monkeypatch):
+    from kiri import config
+
+    monkeypatch.setattr(config, "TIMEZONE", "America/Los_Angeles")
+    session = Session(1, "base")
+    session.append_user("hi")
+    assert session.messages[0]["content"].endswith("(America/Los_Angeles).")
+    assert any(day in session.messages[0]["content"] for day in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+
+def test_compaction_stubs_long_tool_output_and_marks_images():
+    from kiri.engine.context import _render
+
+    rendered = _render([
+        {"role": "user", "content": [{"type": "image", "source": {}}, {"type": "text", "text": "what is this"}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "x" * 2000}]},
+    ])
+    assert "user: [image]" in rendered
+    assert "[... 1500 more chars]" in rendered
+    assert "x" * 501 not in rendered

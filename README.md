@@ -7,10 +7,14 @@ To do this, Kiri does not provide any integrations. Its primary tool is the shel
 ## Features
 
 - **Web search and fetch**, powered by Exa. Requires API Key.
-- **Scheduling** Recurring jobs and one-shot reminders.
+- **Scheduling** Recurring jobs and one-shot reminders, in your `timezone`. A job that fires late (Kiri was down) says so. What a job sends you is folded into the conversation, so you can reply to it.
+- **Events** Drop a `.md` file in `~/.kiri/events` and Kiri runs it once, like a job firing now. Write it elsewhere and `mv` it in, or a half-written file gets read.
+- **Files** Attach any file in the DM and it lands in `~/.kiri/inbox/<message-id>/` for the shell. Kiri sends files back with `send_file`.
 - **Voice messages**, transcribed on-device with faster-whisper: Install with `uv sync --extra stt`.
-- **Memory** Kiri conversations are rolling, similar to one long Claude Code session. Messages from the past are automatically summarized. Long-term memory is separate: plain files in `~/.kiri/memory` that Kiri writes and reads itself — greppable, editable, no schema.
-- **Followups** While Kiri is working on a task, any messages you send will trigger a follow up - not interrupt her. To stop Kiri just say `stop`.
+- **Memory** Kiri conversations are rolling, similar to one long Claude Code session. Messages from the past are automatically summarized, and Kiri can read the originals back with `history`. Send `/new` to start a fresh conversation. Long-term memory is separate: plain files in `~/.kiri/memory` that Kiri writes and reads itself — greppable, editable, no schema.
+- **Followups** While Kiri is working on a task, any messages you send will trigger a follow up - not interrupt her. To stop Kiri just say `stop`. If a turn errors or Kiri dies mid-turn, send `/retry` to pick up from the last checkpoint.
+- **Streaming** On Discord, replies stream into one message that is edited as the model writes.
+- **Latency** `kiri usage` shows p50/p95 for every model call (and time to first token), tool, turn, and transcription over the last 7 days.
 - **Questions** When a call is yours to make, Kiri asks mid-task instead of guessing, and writes the likely answers out for you so you tap rather than type. Something else is always an option. Each transport renders it natively — a Discord picker, or a numbered list in the terminal.
 - **Model portability** Use any Anthropic, OpenRouter, or any OpenAI-compatible endpoint.
 - **MCP** Drop a standard server config at `~/.kiri/mcp.json`

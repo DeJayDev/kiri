@@ -1,12 +1,12 @@
 import asyncio
 import re
 
-from kiri import resume, stt
+from kiri import resume, spans, stt
 from kiri.auth.login import login
 from kiri.engine import conversation
 from kiri.engine.providers.base import AuthRequired
 from kiri.skills import catalog
-from kiri.tools import reload
+from kiri.tools import ask, reload
 from kiri.tools.reload import Restart
 
 _SLASH = re.compile(r"^/([a-z0-9][a-z0-9-]*)(?:[:\s]+(.*))?$", re.DOTALL)
@@ -36,6 +36,13 @@ def _with_quote(inbound, text):
     if not inbound.quote:
         return text
     return f"{inbound.quote}\n\n{text}"
+
+
+def _with_files(inbound, text):
+    if not inbound.files:
+        return text
+    listed = "\n".join(f"Attached file: {path}" for path in inbound.files)
+    return f"{text}\n\n{listed}".strip()
 
 
 class Dispatcher:
@@ -98,26 +105,33 @@ class Dispatcher:
 
     async def _handle(self, inbound):
         channel = inbound.channel_id
+        command = inbound.text.strip().lower()
+        if command == "/new":
+            self.sessions.reset(channel)
+            await self.transport.send(channel, "fresh session.")
+            return
+
         session = self.sessions.get(channel)
+        if command == "/retry" and not session.unanswered():
+            await self.transport.send(channel, "nothing to retry.")
+            return
+
+        resume.begin(channel)
         slow = asyncio.create_task(self._slow_note(channel))
         try:
             async with self.transport.typing(channel):
-                text = inbound.text
-                if inbound.audio:
-                    text = await stt.transcribe(inbound.audio)
-                    if not text:
-                        await self.transport.send(channel, "no speech in that.")
+                # /retry resumes from the last checkpoint, which already holds the
+                # owner's message, exactly like a reload resume.
+                text, images = None, None
+                if command != "/retry":
+                    text = await self._text(inbound)
+                    if text is None:
                         return
-                    await self.transport.send(channel, f"heard: {text}")
-
-                text, err = _expand_skill(text)
-                if err:
-                    await self.transport.send(channel, err)
-                    return
-                text = _with_quote(inbound, text)
+                    images = inbound.images
 
                 try:
-                    reply = await self._turn(session, text, inbound.images)
+                    async with spans.timed("turn", self.transport.name):
+                        reply = await self._turn(session, text, images)
                 except AuthRequired as exc:
                     slow.cancel()  # a login prompt under a heartbeat reads as a hang
                     await self.reauth(channel, exc.provider)
@@ -157,10 +171,29 @@ class Dispatcher:
         except Exception as exc:
             # Same rollback: a dangling tool_use with no tool_result 400s forever.
             self.sessions.drop(channel)
-            await self.transport.send(channel, f"error: {exc}")
+            await self.transport.send(channel, f"error: {exc}\nsend /retry to pick up from the last checkpoint.")
             return
         finally:
             slow.cancel()
+            resume.end()
+
+    async def _text(self, inbound):
+        # The owner's message as the model should read it, or None once the owner
+        # has been told why there is nothing to run.
+        channel = inbound.channel_id
+        text = inbound.text
+        if inbound.audio:
+            text = await stt.transcribe(inbound.audio)
+            if not text:
+                await self.transport.send(channel, "no speech in that.")
+                return None
+            await self.transport.send(channel, f"heard: {text}")
+
+        text, err = _expand_skill(text)
+        if err:
+            await self.transport.send(channel, err)
+            return None
+        return _with_files(inbound, _with_quote(inbound, text))
 
     async def _turn(self, session, text, images=None):
         async def nudges():
@@ -189,7 +222,7 @@ class Dispatcher:
                 text = await stt.transcribe(inbound.audio)
             if inbound.images:
                 images.extend(inbound.images)
-            text = _with_quote(inbound, text)
+            text = _with_files(inbound, _with_quote(inbound, text))
             if text:
                 texts.append(text)
         return "\n\n".join(texts), images or None
@@ -198,7 +231,11 @@ class Dispatcher:
         minutes = 1
         await asyncio.sleep(60)
         while True:
-            await self.transport.send(channel, f"still working ({minutes}m).")
+            question = ask.waiting.get(channel)
+            if question:
+                await self.transport.send(channel, f"waiting on your answer: {question}")
+            else:
+                await self.transport.send(channel, f"still working ({minutes}m).")
             await asyncio.sleep(300)
             minutes += 5
 

@@ -15,6 +15,10 @@ class Transport:
         # Override where send() only works once run() has connected.
         return
 
+    async def owner_channel(self):
+        # Where unaddressed work, such as a dropped event file, reports.
+        raise NotImplementedError
+
     def live(self, channel_id):
         # A streamed-reply preview: feed(delta) as text arrives, then close(final)
         # returns True when the preview now shows final. None means no streaming.
@@ -30,3 +34,5 @@ class Inbound:
     audio: bytes | None = None
     images: list | None = None
     quote: str | None = None
+    # Paths of other attachments, already saved to disk.
+    files: list | None = None

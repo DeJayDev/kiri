@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 from contextlib import asynccontextmanager
 
 import discord
@@ -8,6 +9,7 @@ from kiri import config
 from kiri.transports.base import Inbound, Transport
 
 _LIMIT = 2000
+_FENCE = "```"
 
 _intents = discord.Intents.default()
 _intents.message_content = True
@@ -26,6 +28,79 @@ async def _images(message):
         if (attachment.content_type or "").startswith("image/"):
             out.append((attachment.content_type, await attachment.read()))
     return out
+
+
+async def _files(message, voice):
+    # Everything that isn't an image or the voice note, saved where the shell can
+    # read it. Discord turns a long paste into message.txt, which lands here too.
+    out = []
+    for attachment in message.attachments:
+        if attachment is voice or (attachment.content_type or "").startswith("image/"):
+            continue
+        folder = os.path.join(config.INBOX_DIR, str(message.id))
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, os.path.basename(attachment.filename))
+        await attachment.save(path)
+        out.append(path)
+    return out
+
+
+def _segments(text):
+    # Paragraphs, except a fenced code block stays whole even across blank lines.
+    segments, current, fenced = [], [], False
+    for line in text.split("\n"):
+        if line.strip().startswith(_FENCE):
+            fenced = not fenced
+        if not line.strip() and not fenced:
+            if current:
+                segments.append("\n".join(current))
+                current = []
+            continue
+        current.append(line)
+    if current:
+        segments.append("\n".join(current))
+    return segments
+
+
+def _fit(segment):
+    # A segment over the limit is cut between lines; a cut inside a code block
+    # closes the fence and reopens it with the same opener, so both halves render.
+    if len(segment) <= _LIMIT:
+        return [segment]
+    room = _LIMIT - 20
+    lines = []
+    for line in segment.split("\n"):
+        if not line:
+            lines.append(line)
+            continue
+        lines.extend(line[i : i + room] for i in range(0, len(line), room))
+
+    pieces, current, fence = [], [], None
+    for line in lines:
+        closing = f"\n{_FENCE}" if fence else ""
+        if current and len("\n".join([*current, line])) + len(closing) > _LIMIT:
+            pieces.append("\n".join(current) + closing)
+            current = [fence] if fence else []
+        current.append(line)
+        if line.strip().startswith(_FENCE):
+            fence = None if fence else line.strip()
+    pieces.append("\n".join(current))
+    return pieces
+
+
+def _split(text):
+    chunks, current = [], ""
+    for segment in _segments(text):
+        for piece in _fit(segment):
+            joined = f"{current}\n\n{piece}" if current else piece
+            if len(joined) <= _LIMIT:
+                current = joined
+                continue
+            chunks.append(current)
+            current = piece
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 class _OtherModal(discord.ui.Modal):
@@ -161,6 +236,7 @@ class _Client(discord.Client):
                 audio=audio,
                 images=await _images(message) or None,
                 quote=await self._quote(message),
+                files=await _files(message, voice) or None,
             )
         )
 
@@ -235,12 +311,22 @@ class DiscordDM(Transport):
         return view.answer
 
     async def _write(self, channel, text):
-        text = text or "(no output)"
-        if len(text) <= _LIMIT:
-            await channel.send(text)
+        chunks = _split(text or "") or ["(no output)"]
+        if len(chunks) <= 4:
+            for chunk in chunks:
+                await channel.send(chunk)
             return
         buffer = io.BytesIO(text.encode("utf-8"))
         await channel.send("reply too long, attached.", file=discord.File(buffer, "reply.md"))
+
+    async def send_file(self, channel_id, path):
+        # Returns an error the model can act on (413: too large to upload), or None.
+        channel = await self._channel(channel_id)
+        try:
+            await channel.send(file=discord.File(path))
+        except discord.HTTPException as exc:
+            return f"error: discord {exc.status}: {exc.text}"
+        return None
 
     @asynccontextmanager
     async def typing(self, channel_id):
@@ -248,9 +334,12 @@ class DiscordDM(Transport):
         async with channel.typing():
             yield
 
-    async def notify_owner(self, text):
+    async def owner_channel(self):
         user = self._client.get_user(config.OWNER_ID) or await self._client.fetch_user(
             config.OWNER_ID
         )
         channel = user.dm_channel or await user.create_dm()
-        await self._write(channel, text)
+        return channel.id
+
+    async def notify_owner(self, text):
+        await self._write(await self._channel(await self.owner_channel()), text)

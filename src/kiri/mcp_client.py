@@ -6,9 +6,11 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
+from mcp.types import ImageContent
 
 from kiri.auth import credentials
 from kiri.auth import mcp as mcp_auth
+from kiri.tools.shell import _cap
 
 # Providers cap tool names at 64 chars, and one over-long name rejects the whole
 # request. The tool half carries the meaning, so the prefix gets truncated hard.
@@ -26,12 +28,20 @@ def _qualify(server, tool_name):
 
 
 def _flatten(result):
-    parts = []
+    texts, images = [], []
     for item in result.content:
+        if isinstance(item, ImageContent):
+            source = {"type": "base64", "media_type": item.mimeType, "data": item.data}
+            images.append({"type": "image", "source": source})
+            continue
         text = getattr(item, "text", None)
-        parts.append(text if text is not None else str(item))
-    out = "\n".join(parts)
-    return f"error: {out}" if getattr(result, "isError", False) else out
+        texts.append(text if text is not None else str(item))
+    out = _cap("\n".join(texts))
+    if getattr(result, "isError", False):
+        out = f"error: {out}"
+    if not images:
+        return out
+    return [{"type": "text", "text": out}, *images] if out else images
 
 
 def _runner(session, tool_name):

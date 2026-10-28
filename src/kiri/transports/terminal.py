@@ -42,8 +42,14 @@ class Terminal(Transport):
             if task:
                 await task
 
+    async def owner_channel(self):
+        return _CHANNEL
+
     async def send(self, channel_id, text):
         print(text or "(no output)", flush=True)
+
+    async def send_file(self, channel_id, path):
+        print(f"[file: {path}]", flush=True)
 
     async def ask(self, channel_id, question, options, multi_select):
         lines = [question]

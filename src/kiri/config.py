@@ -1,6 +1,7 @@
 import os
 import tomllib
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Config source is a TOML file; environment variables override any value (so
 # secrets can live in the shell's .env instead of the file). Resolution order:
@@ -80,6 +81,10 @@ DISCORD_BOT_TOKEN = _get("DISCORD_BOT_TOKEN", None, "discord", "token")
 # 0 means unset; require() rejects it.
 OWNER_ID = int(_get("KIRI_OWNER_ID", 0, "discord", "owner_id") or 0)
 
+# IANA zone for the date in each turn and for evaluating cron. Never the host's
+# zone: a server is often UTC while its owner is not.
+TIMEZONE = _get("KIRI_TIMEZONE", "UTC", "timezone")
+
 EXA_API_KEY = _get("EXA_API_KEY", None, "web", "exa_api_key")
 
 # Speech-to-text for Discord voice messages, run on-device (no per-use cost).
@@ -97,6 +102,10 @@ MEMORY_DIR = os.path.expanduser(_get("KIRI_MEMORY_DIR", os.path.join(KIRI_HOME, 
 # Owner-authored procedures, one <name>/SKILL.md each. Their descriptions ride in
 # the prompt prefix, so unlike memory these are written by a person, rarely.
 SKILLS_DIR = os.path.expanduser(_get("KIRI_SKILLS_DIR", os.path.join(KIRI_HOME, "skills"), "paths", "skills"))
+# Each *.md dropped here runs once as an instruction, like a job firing now.
+EVENTS_DIR = os.path.join(KIRI_HOME, "events")
+# Files the owner attaches in a DM, saved where the shell can read them.
+INBOX_DIR = os.path.join(KIRI_HOME, "inbox")
 MCP_CONFIG = os.path.expanduser(
     _get("KIRI_MCP_CONFIG", os.path.join(KIRI_HOME, "mcp.json"), "paths", "mcp_config")
 )
@@ -135,6 +144,11 @@ def require():
 
     if missing:
         raise SystemExit(f"missing required config: {', '.join(missing)}")
+    try:
+        ZoneInfo(TIMEZONE)
+    except ZoneInfoNotFoundError:
+        raise SystemExit(f"unknown timezone '{TIMEZONE}' (use an IANA name like America/Los_Angeles)")
     os.makedirs(KIRI_HOME, exist_ok=True)
     os.makedirs(MEMORY_DIR, exist_ok=True)
     os.makedirs(SKILLS_DIR, exist_ok=True)
+    os.makedirs(EVENTS_DIR, exist_ok=True)

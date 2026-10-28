@@ -370,3 +370,20 @@ def test_xai_stream_does_not_ask_for_usage_it_reports_unasked(monkeypatch):
 
     asyncio.run(xai.XAI().complete("SYS", [{"role": "user", "content": "hi"}], None, on_text=lambda d: None))
     assert "stream_options" not in sent["json"]
+
+
+def test_to_messages_moves_a_tool_image_into_the_following_user_message():
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAA"}}
+    messages = [
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "c1", "name": "shot", "input": {}}]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "c1", "content": [{"type": "text", "text": "captured"}, image]}
+            ],
+        },
+    ]
+    out = openai.to_messages("SYS", messages)
+    assert out[2] == {"role": "tool", "tool_call_id": "c1", "content": "captured"}
+    assert out[3]["role"] == "user"
+    assert out[3]["content"][0]["image_url"]["url"] == "data:image/png;base64,AAA"

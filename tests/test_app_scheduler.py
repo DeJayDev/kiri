@@ -1,6 +1,8 @@
 import asyncio
+import time
 
 from kiri import app
+from kiri.engine.context import Session
 from kiri.engine.providers.base import AuthRequired
 from kiri.tools.reload import Restart
 
@@ -15,9 +17,21 @@ class _Transport:
         self.sent.append((channel_id, text))
 
 
+class _Sessions:
+    def __init__(self):
+        self.session = Session(5, "base")
+
+    def get(self, channel_id):
+        return self.session
+
+    def archive(self, channel_id, messages):
+        pass
+
+
 class _Dispatcher:
     def __init__(self):
         self.transport = _Transport()
+        self.sessions = _Sessions()
         self.reauths = []
 
     async def reauth(self, channel_id, provider):
@@ -30,7 +44,7 @@ def test_one_shot_reminder_delivers_text_without_agent(monkeypatch):
 
     monkeypatch.setattr(app.conversation, "run_turn", fail_run_turn)
     dispatcher = _Dispatcher()
-    job = {"id": 1, "cron": None, "instruction": "stretch", "channel_id": 5}
+    job = {"id": 1, "cron": None, "instruction": "stretch", "channel_id": 5, "next_run": time.time()}
 
     asyncio.run(app.execute_job(job, "base", store=None, mcp_tools=[], dispatcher=dispatcher))
 
@@ -47,7 +61,7 @@ def test_recurring_job_runs_through_agent(monkeypatch):
     monkeypatch.setattr(app.conversation, "run_turn", fake_run_turn)
     dispatcher = _Dispatcher()
     store = object()
-    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5}
+    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5, "next_run": time.time()}
 
     asyncio.run(app.execute_job(job, "base", store, [], dispatcher))
 
@@ -71,7 +85,7 @@ def test_job_hitting_expired_auth_reauths_then_replays(monkeypatch):
 
     monkeypatch.setattr(app.conversation, "run_turn", flaky_run_turn)
     dispatcher = _Dispatcher()
-    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5}
+    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5, "next_run": time.time()}
 
     asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
 
@@ -87,7 +101,7 @@ def test_job_error_is_reported_not_raised(monkeypatch):
 
     monkeypatch.setattr(app.conversation, "run_turn", boom)
     dispatcher = _Dispatcher()
-    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5}
+    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5, "next_run": time.time()}
 
     asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
 
@@ -100,7 +114,7 @@ def test_reload_in_a_scheduled_job_says_so_instead_of_an_empty_error(monkeypatch
 
     monkeypatch.setattr(app.conversation, "run_turn", wants_reload)
     dispatcher = _Dispatcher()
-    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5}
+    job = {"id": 1, "cron": "* * * * *", "instruction": "tick", "channel_id": 5, "next_run": time.time()}
 
     asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
 

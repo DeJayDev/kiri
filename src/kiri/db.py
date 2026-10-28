@@ -24,7 +24,7 @@ class _Base(peewee.Model):
         TABLES.append(cls)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def bind(path=None):
@@ -48,6 +48,8 @@ def _migrate():
             migrator.add_column("usage", "cache_write_tokens", UsageEvent.cache_write_tokens),
             migrator.add_column("usage", "cache_read_tokens", UsageEvent.cache_read_tokens),
         )
+    if version < 2:
+        run_migrations(migrator.drop_column("sessions", "pinned"))
 
 
 def _baseline():
@@ -74,7 +76,6 @@ class Conversation(_Base):
     channel_id = peewee.IntegerField(primary_key=True)
     messages = peewee.TextField()
     summary = peewee.TextField()
-    pinned = peewee.TextField()
     last_input_tokens = peewee.IntegerField()
 
     class Meta:
@@ -94,3 +95,31 @@ class UsageEvent(_Base):
 
     class Meta:
         table_name = "usage"
+
+
+class Transcript(_Base):
+    # Messages that left a live session: cut by compaction, cleared by /new, or
+    # from a scheduled run's throwaway session. Read back by the history tool.
+    id = peewee.AutoField()
+    channel_id = peewee.IntegerField(index=True)
+    ts = peewee.FloatField()
+    message = peewee.TextField()
+
+    class Meta:
+        table_name = "transcript"
+
+
+class Span(_Base):
+    # One timed operation: an llm request, a tool call, a whole turn, a
+    # transcription. Read back by `kiri usage` for latency percentiles.
+    id = peewee.AutoField()
+    ts = peewee.FloatField(index=True)
+    kind = peewee.TextField()
+    name = peewee.TextField()
+    ms = peewee.FloatField()
+    # Streamed llm requests only: how long until the first text arrived.
+    first_token_ms = peewee.FloatField(null=True)
+    ok = peewee.BooleanField()
+
+    class Meta:
+        table_name = "spans"

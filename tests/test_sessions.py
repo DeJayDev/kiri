@@ -6,7 +6,6 @@ def test_session_persists_across_stores():
     session = store.get(42)
     session.messages = [{"role": "user", "content": "hi"}]
     session.summary = "earlier"
-    session.pinned = ["a fact"]
     session.last_input_tokens = 99
     store.save(session)
 
@@ -14,7 +13,6 @@ def test_session_persists_across_stores():
     loaded = reopened.get(42)
     assert loaded.messages == [{"role": "user", "content": "hi"}]
     assert loaded.summary == "earlier"
-    assert loaded.pinned == ["a fact"]
     assert loaded.last_input_tokens == 99
 
 
@@ -31,3 +29,10 @@ def test_drop_discards_a_turn_left_dangling_by_an_error():
 
     store.drop(5)
     assert store.get(5).messages == [{"role": "user", "content": "hi"}]
+
+
+def test_a_dropped_turn_keeps_the_notes_waiting_for_the_owner():
+    store = SessionStore("base")
+    store.get(1).note("job output")
+    store.drop(1)
+    assert store.get(1).notes == ["job output"]
