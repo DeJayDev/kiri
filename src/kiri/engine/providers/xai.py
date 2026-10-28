@@ -178,9 +178,12 @@ class XAI(OpenAI):
                 "set model.name to an exact id from xAI's model list, not an alias."
             )
 
-    async def complete(self, system, messages, tools, model=None):
+    def stream_options(self):
+        return {}
+
+    async def complete(self, system, messages, tools, model=None, on_text=None):
         try:
-            return await super().complete(system, messages, tools, model=model)
+            return await super().complete(system, messages, tools, model=model, on_text=on_text)
         except ProviderError as exc:
             if exc.status == 403 and not self.key():
                 raise RuntimeError(

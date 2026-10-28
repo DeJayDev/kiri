@@ -132,4 +132,5 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
             reply = f"job error: {retry_error}"
     except Exception as exc:
         reply = f"job error: {exc}"
-    await transport.send(job["channel_id"], reply)
+    if reply is not None:
+        await transport.send(job["channel_id"], reply)

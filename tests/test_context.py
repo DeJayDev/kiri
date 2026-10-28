@@ -86,7 +86,7 @@ def test_compaction_reports_its_tokens_to_the_usage_sink(monkeypatch):
     monkeypatch.setattr(config, "MODEL_CONTEXT", 100)
 
     class _Provider:
-        async def complete(self, system, messages, tools, model=None):
+        async def complete(self, system, messages, tools, model=None, on_text=None):
             return {
                 "content": [{"type": "text", "text": "BRIEF"}],
                 "usage": {"input_tokens": 900, "output_tokens": 30},

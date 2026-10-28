@@ -10,10 +10,10 @@ def use(chat, summarizer=None, sink=None):
     _sink = sink
 
 
-async def _run(provider, system, messages, tools, model):
+async def _run(provider, system, messages, tools, model, on_text=None):
     if provider is None:
         raise RuntimeError("no provider configured; app.start() wires this up")
-    data = await provider.complete(system, messages, tools, model=model)
+    data = await provider.complete(system, messages, tools, model=model, on_text=on_text)
     # Every completion is billed, including the summarizer's. Reported here so the
     # sink doesn't have to be threaded through every caller.
     if _sink:
@@ -21,8 +21,8 @@ async def _run(provider, system, messages, tools, model):
     return data
 
 
-async def complete(system, messages, tools, model=None):
-    return await _run(_chat, system, messages, tools, model)
+async def complete(system, messages, tools, model=None, on_text=None):
+    return await _run(_chat, system, messages, tools, model, on_text)
 
 
 async def summarize(system, messages, model=None):

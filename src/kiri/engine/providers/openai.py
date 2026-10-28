@@ -153,7 +153,12 @@ class OpenAI(Provider):
         # gpt-4o-2024-08-06), which is not a substitution. xAI overrides this.
         return
 
-    async def complete(self, system, messages, tools, model=None):
+    def stream_options(self):
+        # OpenAI only reports usage on a stream when asked; without it compaction
+        # never fires. xAI reports it unasked and overrides this.
+        return {"stream_options": {"include_usage": True}}
+
+    async def complete(self, system, messages, tools, model=None, on_text=None):
         gap = self.missing()
         if gap:
             raise RuntimeError(f"{self.name}: not configured ({gap})")
@@ -165,10 +170,65 @@ class OpenAI(Provider):
             body["tools"] = converted
 
         url = f"{self.base_url()}/chat/completions"
-        resp = await http.request("POST", url, headers=await self.headers(), json=body)
-        if resp.status_code != 200:
-            raise ProviderError(self.name, resp.status_code, resp.text)
+        if on_text:
+            data = await self._stream(url, body, on_text)
+        else:
+            resp = await http.request("POST", url, headers=await self.headers(), json=body)
+            if resp.status_code != 200:
+                raise ProviderError(self.name, resp.status_code, resp.text)
+            data = resp.json()
 
-        data = resp.json()
         self.check_model(requested, data)
         return self.from_response(data)
+
+    async def _stream(self, url, body, on_text):
+        body = {**body, "stream": True, **self.stream_options()}
+        resp = await http.request("POST", url, headers=await self.headers(), json=body, stream=True)
+        try:
+            if resp.status_code != 200:
+                await resp.aread()
+                raise ProviderError(self.name, resp.status_code, resp.text)
+            return await self._read_chunks(resp, on_text)
+        finally:
+            await resp.aclose()
+
+    async def _read_chunks(self, resp, on_text):
+        # Reassembled into the non-streaming response shape so from_response and
+        # check_model see exactly what they would have without streaming.
+        text = ""
+        calls = {}
+        data = {"usage": {}}
+        async for line in resp.aiter_lines():
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            chunk = json.loads(payload)
+            if chunk.get("error"):
+                raise ProviderError(self.name, 200, json.dumps(chunk["error"]))
+            if chunk.get("model"):
+                data["model"] = chunk["model"]
+            if chunk.get("usage"):
+                data["usage"] = chunk["usage"]
+            for choice in chunk.get("choices") or []:
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    text += delta["content"]
+                    on_text(delta["content"])
+                for call in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(
+                        call["index"],
+                        {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                    )
+                    function = call.get("function") or {}
+                    if call.get("id"):
+                        slot["id"] = call["id"]
+                    if function.get("name"):
+                        slot["function"]["name"] = function["name"]
+                    if function.get("arguments"):
+                        slot["function"]["arguments"] += function["arguments"]
+
+        message = {"content": text, "tool_calls": [calls[i] for i in sorted(calls)]}
+        data["choices"] = [{"message": message}]
+        return data

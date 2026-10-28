@@ -27,7 +27,7 @@ async def _noop(_message):
 def test_reload_midloop_leaves_a_valid_completed_tool_result(monkeypatch):
     session = Session(1, "base")
 
-    async def complete(system, messages, schemas):
+    async def complete(system, messages, schemas, on_text=None):
         return _reply([{"type": "tool_use", "id": "t1", "name": "reload", "input": {}}], "tool_use")
 
     def boom():
@@ -65,7 +65,7 @@ def test_resume_continues_without_injecting_a_user_turn(monkeypatch):
         },
     ]
 
-    async def complete(system, messages, schemas):
+    async def complete(system, messages, schemas, on_text=None):
         return _reply([{"type": "text", "text": "all done"}], "end_turn")
 
     monkeypatch.setattr(agent.llm, "complete", complete)
@@ -86,7 +86,7 @@ def test_text_alongside_a_tool_call_is_delivered_not_just_the_final_reply(monkey
         _reply([{"type": "text", "text": "done"}], "end_turn"),
     ])
 
-    async def complete(system, messages, schemas):
+    async def complete(system, messages, schemas, on_text=None):
         return next(replies)
 
     monkeypatch.setattr(agent.llm, "complete", complete)
@@ -108,7 +108,7 @@ def test_the_session_is_checkpointed_before_each_model_call(monkeypatch):
         _reply([{"type": "text", "text": "done"}], "end_turn"),
     ])
 
-    async def complete(system, messages, schemas):
+    async def complete(system, messages, schemas, on_text=None):
         return next(replies)
 
     monkeypatch.setattr(agent.llm, "complete", complete)
@@ -131,7 +131,7 @@ def test_a_nudge_mid_tool_loop_rides_in_on_the_tool_result(monkeypatch):
         _reply([{"type": "text", "text": "done"}], "end_turn"),
     ])
 
-    async def complete(system, messages, schemas):
+    async def complete(system, messages, schemas, on_text=None):
         return next(replies)
 
     monkeypatch.setattr(agent.llm, "complete", complete)
@@ -156,7 +156,7 @@ def test_a_nudge_as_the_turn_ends_keeps_it_going(monkeypatch):
         _reply([{"type": "text", "text": "and the follow-up"}], "end_turn"),
     ])
 
-    async def complete(system, messages, schemas):
+    async def complete(system, messages, schemas, on_text=None):
         return next(replies)
 
     monkeypatch.setattr(agent.llm, "complete", complete)
@@ -175,3 +175,85 @@ def test_a_nudge_as_the_turn_ends_keeps_it_going(monkeypatch):
     assert sent == ["here you go"]
     assert result == "and the follow-up"
     assert session.messages[2]["content"] == [{"type": "text", "text": "wait, one more thing"}]
+
+
+class _Preview:
+    def __init__(self, shows):
+        self.shows = shows
+        self.fed = []
+        self.closed = []
+
+    def feed(self, delta):
+        self.fed.append(delta)
+
+    async def close(self, final):
+        self.closed.append(final)
+        return self.shows
+
+
+def test_a_reply_the_preview_already_shows_is_not_returned_to_be_sent_again(monkeypatch):
+    session = Session(1, "base")
+    preview = _Preview(shows=True)
+
+    async def complete(system, messages, schemas, on_text=None):
+        on_text("hel")
+        on_text("lo")
+        return _reply([{"type": "text", "text": "hello"}], "end_turn")
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    result = asyncio.run(agent.run(session, "hi", _Registry(), _noop, live=lambda: preview))
+    assert result is None
+    assert preview.fed == ["hel", "lo"]
+    assert preview.closed == ["hello"]
+
+
+def test_a_reply_the_preview_could_not_show_is_returned_for_the_normal_send(monkeypatch):
+    session = Session(1, "base")
+
+    async def complete(system, messages, schemas, on_text=None):
+        return _reply([{"type": "text", "text": "x" * 3000}], "end_turn")
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    result = asyncio.run(agent.run(session, "hi", _Registry(), _noop, live=lambda: _Preview(shows=False)))
+    assert result == "x" * 3000
+
+
+def test_tool_call_text_the_preview_shows_is_not_notified_twice(monkeypatch):
+    session = Session(1, "base")
+    replies = iter([
+        _reply(
+            [{"type": "text", "text": "on it"}, {"type": "tool_use", "id": "t1", "name": "shell", "input": {}}],
+            "tool_use",
+        ),
+        _reply([{"type": "text", "text": "done"}], "end_turn"),
+    ])
+
+    async def complete(system, messages, schemas, on_text=None):
+        return next(replies)
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+    sent = []
+
+    async def notify(message):
+        sent.append(message)
+
+    asyncio.run(agent.run(session, "go", _Registry({"shell": lambda: "ok"}), notify, live=lambda: _Preview(shows=True)))
+    assert sent == []
+
+
+def test_a_failed_request_closes_the_preview_as_aborted(monkeypatch):
+    session = Session(1, "base")
+    preview = _Preview(shows=False)
+
+    async def complete(system, messages, schemas, on_text=None):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    try:
+        asyncio.run(agent.run(session, "hi", _Registry(), _noop, live=lambda: preview))
+    except RuntimeError:
+        pass
+    assert preview.closed == [None]

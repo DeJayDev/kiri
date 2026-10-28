@@ -10,4 +10,7 @@ async def run_turn(session, text, store, mcp_tools, transport, images=None, nudg
     async def notify(message):
         await transport.send(session.channel_id, message)
 
-    return await agent.run(session, text, registry, notify, images, nudges, persist)
+    def live():
+        return transport.live(session.channel_id)
+
+    return await agent.run(session, text, registry, notify, images, nudges, persist, live)
