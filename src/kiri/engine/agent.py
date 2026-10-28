@@ -1,3 +1,5 @@
+import asyncio
+
 from kiri.engine import llm
 from kiri.tools.reload import Restart
 
@@ -62,23 +64,27 @@ async def run(
         if said and not shown:
             await notify(said)
 
+        calls = [block for block in content if block.get("type") == "tool_use"]
+        outputs = await asyncio.gather(
+            *(registry.run(block["name"], block.get("input", {})) for block in calls),
+            return_exceptions=True,
+        )
+
         results = []
-        for block in content:
-            if block.get("type") != "tool_use":
-                continue
-            try:
-                output = await registry.run(block["name"], block.get("input", {}))
-            except Restart:
-                # Append the reload tool_result before unwinding, or the saved turn
-                # ends on a bare tool_use and 400s when the resume replays it.
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block["id"],
-                    "content": "reloaded successfully - welcome back",
-                })
-                session.append_tool_results(results)
-                raise
+        restart = None
+        for block, output in zip(calls, outputs):
+            if isinstance(output, Restart):
+                restart = output
+                output = "reloaded successfully - welcome back"
+            elif isinstance(output, BaseException):
+                raise output
             results.append({"type": "tool_result", "tool_use_id": block["id"], "content": output})
+
+        if restart:
+            # Append every tool_result before unwinding, or the saved turn ends on an
+            # unanswered tool_use and 400s when the resume replays it.
+            session.append_tool_results(results)
+            raise restart
 
         text, imgs = await take_nudges()
         session.append_tool_results(results, text, imgs)

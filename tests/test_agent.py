@@ -257,3 +257,64 @@ def test_a_failed_request_closes_the_preview_as_aborted(monkeypatch):
     except RuntimeError:
         pass
     assert preview.closed == [None]
+
+
+def test_a_batch_of_tool_calls_runs_concurrently_and_answers_in_order(monkeypatch):
+    session = Session(1, "base")
+    both_started = asyncio.Event()
+    started = []
+    replies = iter([
+        _reply(
+            [
+                {"type": "tool_use", "id": "a", "name": "slow", "input": {}},
+                {"type": "tool_use", "id": "b", "name": "fast", "input": {}},
+            ],
+            "tool_use",
+        ),
+        _reply([{"type": "text", "text": "done"}], "end_turn"),
+    ])
+
+    class _Concurrent:
+        def schemas(self):
+            return []
+
+        async def run(self, name, args):
+            started.append(name)
+            if len(started) == 2:
+                both_started.set()
+            await asyncio.wait_for(both_started.wait(), 1)
+            return f"{name} ok"
+
+    async def complete(system, messages, schemas, on_text=None):
+        return next(replies)
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    assert asyncio.run(agent.run(session, "go", _Concurrent(), _noop)) == "done"
+    results = session.messages[2]["content"]
+    assert [(r["tool_use_id"], r["content"]) for r in results] == [("a", "slow ok"), ("b", "fast ok")]
+
+
+def test_reload_in_a_batch_still_answers_every_call(monkeypatch):
+    session = Session(1, "base")
+
+    async def complete(system, messages, schemas, on_text=None):
+        return _reply(
+            [
+                {"type": "tool_use", "id": "t1", "name": "shell", "input": {}},
+                {"type": "tool_use", "id": "t2", "name": "reload", "input": {}},
+            ],
+            "tool_use",
+        )
+
+    def boom():
+        raise Restart()
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    try:
+        asyncio.run(agent.run(session, "go", _Registry({"shell": lambda: "ok", "reload": boom}), _noop))
+    except Restart:
+        pass
+    results = session.messages[-1]["content"]
+    assert [r["tool_use_id"] for r in results] == ["t1", "t2"]
