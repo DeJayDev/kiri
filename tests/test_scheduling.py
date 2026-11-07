@@ -110,16 +110,6 @@ class _Dispatcher:
         self.archived = messages
 
 
-def test_a_late_reminder_says_when_it_was_due():
-    dispatcher = _Dispatcher()
-    job = {"id": 1, "cron": None, "instruction": "stretch", "channel_id": 5, "next_run": time.time() - 3600}
-
-    asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
-
-    (sent,) = dispatcher.transport.sent
-    assert sent.startswith("reminder: stretch\n(late: it was due ")
-
-
 def test_a_late_job_tells_the_model_it_is_late(monkeypatch):
     seen = []
 
@@ -128,7 +118,7 @@ def test_a_late_job_tells_the_model_it_is_late(monkeypatch):
         return "ok"
 
     monkeypatch.setattr(app.conversation, "run_turn", run_turn)
-    job = {"id": 1, "cron": "0 9 * * *", "instruction": "brief", "channel_id": 5, "next_run": time.time() - 3600}
+    job = {"id": 1, "condition": None, "cron": "0 9 * * *", "instruction": "brief", "channel_id": 5, "next_run": time.time() - 3600}
 
     asyncio.run(app.execute_job(job, "base", None, [], _Dispatcher()))
 
@@ -142,7 +132,7 @@ def test_job_output_is_folded_into_the_next_owner_turn(monkeypatch):
 
     monkeypatch.setattr(app.conversation, "run_turn", run_turn)
     dispatcher = _Dispatcher()
-    job = {"id": 1, "cron": "0 9 * * *", "instruction": "check PRs", "channel_id": 5, "next_run": time.time()}
+    job = {"id": 1, "condition": None, "cron": "0 9 * * *", "instruction": "check PRs", "channel_id": 5, "next_run": time.time()}
 
     asyncio.run(app.execute_job(job, "base", None, [], dispatcher))
     dispatcher.session.append_user("which ones?")

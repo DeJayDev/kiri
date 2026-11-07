@@ -40,6 +40,12 @@ async def run(args):
     except (TypeError, ValueError):
         return f"error: invalid timeout {raw!r} (whole seconds)"
 
+    _, output = await execute(command, timeout)
+    return output
+
+
+async def execute(command, timeout):
+    # Returns (exit code, formatted output); the code is None when the timeout killed it.
     proc = await asyncio.create_subprocess_shell(
         _sourced(command),
         stdout=asyncio.subprocess.PIPE,
@@ -54,12 +60,12 @@ async def run(args):
         out, err = await asyncio.wait_for(proc.communicate(), timeout)
     except TimeoutError:
         out, err = await _kill(proc)
-        return _format(proc.returncode, out, err, timed_out=timeout)
+        return None, _format(proc.returncode, out, err, timed_out=timeout)
     except asyncio.CancelledError:
         await _kill(proc)
         raise
 
-    return _format(proc.returncode, out, err)
+    return proc.returncode, _format(proc.returncode, out, err)
 
 
 def _sourced(command):

@@ -128,9 +128,9 @@ def test_the_turn_header_names_the_owners_zone_and_weekday(monkeypatch):
 
 
 def test_compaction_stubs_long_tool_output_and_marks_images():
-    from kiri.engine.context import _render
+    from kiri.engine.context import render
 
-    rendered = _render([
+    rendered = render([
         {"role": "user", "content": [{"type": "image", "source": {}}, {"type": "text", "text": "what is this"}]},
         {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "x" * 2000}]},
     ])

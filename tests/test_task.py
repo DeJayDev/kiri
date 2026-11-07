@@ -30,7 +30,7 @@ def test_a_waited_task_answers_from_a_fresh_session(monkeypatch):
         return _reply([{"type": "text", "text": "42"}], "end_turn")
 
     monkeypatch.setattr(task.agent.llm, "complete", complete)
-    run = task.build(1, "base", _Registry)
+    run = task.build(1, "base", _Registry())
 
     assert asyncio.run(run({"prompt": "what is six times seven", "wait": True})) == "42"
     assert len(seen[0]) == 1
@@ -45,14 +45,14 @@ def test_a_reload_inside_a_task_comes_back_as_an_error(monkeypatch):
         raise Restart()
 
     monkeypatch.setattr(task.agent.llm, "complete", complete)
-    run = task.build(1, "base", lambda: _Registry({"reload": restart}))
+    run = task.build(1, "base", _Registry({"reload": restart}))
 
     assert asyncio.run(run({"prompt": "reload", "wait": True})).startswith("error: reload is not available")
 
 
 def test_a_background_task_becomes_an_event():
     os.makedirs(config.EVENTS_DIR)
-    out = asyncio.run(task.build(1, "base", _Registry)({"prompt": "check the build", "wait": False}))
+    out = asyncio.run(task.build(1, "base", _Registry())({"prompt": "check the build", "wait": False}))
 
     assert out.startswith("started in the background")
     [(name, body)] = events.take()

@@ -48,20 +48,27 @@ class _FakeStore:
         return 7
 
 
-def _remind_runner(store):
-    return {schema["name"]: run for schema, run in scheduler.build(store, channel_id=1)}["remind"]
+def _schedule_runner(store):
+    return {schema["name"]: run for schema, run in scheduler.build(store, channel_id=1)}["schedule_job"]
 
 
-def test_remind_rejects_past_time():
-    out = asyncio.run(_remind_runner(_FakeStore())({"when": "2000-01-01T00:00:00Z", "instruction": "x"}))
-    assert "past" in out
+def test_one_time_job_rejects_past_time():
+    out = asyncio.run(_schedule_runner(_FakeStore())({"when": "2000-01-01T00:00:00Z", "instruction": "x"}))
+    assert out == "error: when is in the past"
 
 
-def test_remind_schedules_future():
+def test_one_time_job_schedules_future():
     store = _FakeStore()
-    out = asyncio.run(_remind_runner(store)({"when": "2999-01-01T00:00:00Z", "instruction": "ping"}))
-    assert "reminder 7" in out
+    out = asyncio.run(_schedule_runner(store)({"when": "2999-01-01T00:00:00Z", "instruction": "ping"}))
+    assert out.startswith("scheduled job 7 for ")
     assert store.added[0][1] == "ping"
+
+
+def test_schedule_job_takes_exactly_one_of_cron_or_when():
+    run = _schedule_runner(_FakeStore())
+    both = asyncio.run(run({"cron": "0 9 * * *", "when": "2999-01-01T00:00:00Z", "instruction": "x"}))
+    neither = asyncio.run(run({"instruction": "x"}))
+    assert both == neither == "error: pass exactly one of cron (recurring) or when (once)"
 
 
 def test_parse_when_iso_and_epoch():

@@ -24,7 +24,7 @@ class _Base(peewee.Model):
         TABLES.append(cls)
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def bind(path=None):
@@ -52,6 +52,12 @@ def _migrate():
         run_migrations(migrator.drop_column("sessions", "pinned"))
     if version < 3:
         run_migrations(migrator.add_column("sessions", "notes", Conversation.notes))
+    if version < 4:
+        run_migrations(
+            migrator.add_column("jobs", "condition", Job.condition),
+            migrator.add_column("jobs", "every", Job.every),
+            migrator.add_column("jobs", "expires", Job.expires),
+        )
 
 
 def _baseline():
@@ -63,12 +69,17 @@ def _baseline():
 class Job(_Base):
     # Explicit so type checkers see the primary key peewee would add anyway.
     id = peewee.AutoField()
-    # cron is null for one-shot reminders, which fire once and self-delete.
+    # cron is null for one-shot jobs, which fire once and self-delete.
     cron = peewee.TextField(null=True)
     instruction = peewee.TextField()
     channel_id = peewee.IntegerField()
     next_run = peewee.FloatField()
     created = peewee.FloatField()
+    # Set only on a watch: a shell command run every `every` seconds until it exits
+    # 0 or `expires` passes.
+    condition = peewee.TextField(null=True)
+    every = peewee.IntegerField(null=True)
+    expires = peewee.FloatField(null=True)
 
     class Meta:
         table_name = "jobs"

@@ -2,8 +2,6 @@ from typing import Any
 
 from kiri import config, http
 
-_SEARCH = "https://api.exa.ai/search"
-_CONTENTS = "https://api.exa.ai/contents"
 _FETCH_CAP = 50000
 
 SEARCH_SCHEMA = {
@@ -50,7 +48,7 @@ async def search(args):
         "numResults": args.get("num_results", 5),
         "contents": {"highlights": True},
     }
-    data, err = await _post(_SEARCH, body)
+    data, err = await _post("https://api.exa.ai/search", body)
     if err:
         return err
 
@@ -63,7 +61,7 @@ async def search(args):
 
 async def fetch(args):
     body = {"urls": [args["url"]], "text": True}
-    data, err = await _post(_CONTENTS, body)
+    data, err = await _post("https://api.exa.ai/contents", body)
     if err:
         return err
 

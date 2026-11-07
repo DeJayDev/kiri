@@ -7,7 +7,7 @@ To do this, Kiri does not provide any integrations. Its primary tool is the shel
 ## Features
 
 - **Web search and fetch**, powered by Exa. Requires API Key.
-- **Scheduling** Recurring jobs and one-shot reminders, in your `timezone`. A job that fires late (Kiri was down) says so. What a job sends you is folded into the conversation, so you can reply to it.
+- **Scheduling** Recurring and one-time jobs, and watches, in your `timezone`. A watch is "tell me when X": Kiri writes X as a shell check that runs on an interval with no model call, and she is woken once, when it passes. A watch that breaks or runs out tells you so. A job that fires late (Kiri was down) says so. What a job sends you is folded into the conversation, so you can reply to it.
 - **Events** Drop a `.md` file in `~/.kiri/events` and Kiri runs it once, like a job firing now. Write it elsewhere and `mv` it in, or a half-written file gets read.
 - **Tasks** Kiri hands work to sub-agents with `task`: waited ones run side by side and answer back into the turn, background ones message you when done. Send `/bg <prompt>` to start one yourself.
 - **Files** Attach any file in the DM and it lands in `~/.kiri/inbox/<message-id>/` for the shell. Kiri sends files back with `send_file`.

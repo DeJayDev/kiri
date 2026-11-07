@@ -30,13 +30,13 @@ async def _drop(_message):
     pass
 
 
-def build(channel_id, base_system, tools):
+def build(channel_id, base_system, registry):
     async def task(args):
         if not args["wait"]:
             events.put(args["prompt"])
             return "started in the background; it will message the owner when done"
         try:
-            return await agent.run(Session(channel_id, base_system), args["prompt"], tools(), _drop)
+            return await agent.run(Session(channel_id, base_system), args["prompt"], registry, _drop)
         except Restart:
             return "error: reload is not available inside a task; reload from the main conversation"
 

@@ -2,7 +2,7 @@ import json
 from itertools import islice
 
 from kiri.db import Transcript
-from kiri.engine.context import _render
+from kiri.engine.context import render
 
 SCHEMA = {
     "name": "history",
@@ -34,11 +34,11 @@ def build(channel_id):
             .order_by(Transcript.id.desc())
         )
         messages = (json.loads(row.message) for row in rows.iterator())
-        matches = (m for m in messages if query in _render([m]).lower())
+        matches = (m for m in messages if query in render([m]).lower())
         skip = args.get("skip") or 0
         page = list(islice(matches, skip, skip + (args.get("count") or 20)))
         if page:
-            return _render(page[::-1])
+            return render(page[::-1])
         if query:
             return f"no earlier messages contain {args['query']!r}"
         return "no earlier messages"

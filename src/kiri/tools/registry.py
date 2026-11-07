@@ -40,11 +40,7 @@ def build(store, channel_id, mcp_tools, transport, base_system):
     registry.add(ask.SCHEMA, ask.build(transport, channel_id))
     registry.add(send_file.SCHEMA, send_file.build(transport, channel_id))
     registry.add(history.SCHEMA, history.build(channel_id))
-
-    def fresh():
-        return build(store, channel_id, mcp_tools, transport, base_system)
-
-    registry.add(task.SCHEMA, task.build(channel_id, base_system, fresh))
+    registry.add(task.SCHEMA, task.build(channel_id, base_system, registry))
     registry.add(web.SEARCH_SCHEMA, web.search)
     registry.add(web.FETCH_SCHEMA, web.fetch)
     for schema, runner in scheduler.build(store, channel_id):

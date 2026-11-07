@@ -142,7 +142,7 @@ class Session:
         return cut
 
     async def _summarize(self, old):
-        transcript = _render(old)
+        transcript = render(old)
         prior = f"Existing summary:\n{self.summary}\n\n" if self.summary else ""
         instruction = (
             "Summarize the conversation below into a dense, factual brief that "
@@ -160,7 +160,7 @@ def _is_user_turn(message):
     return message["role"] == "user" and isinstance(message["content"], str)
 
 
-def _render(messages):
+def render(messages):
     lines = []
     for m in messages:
         content = m["content"]

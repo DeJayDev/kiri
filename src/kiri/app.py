@@ -12,6 +12,7 @@ from kiri.engine.providers.base import AuthRequired
 from kiri.engine.sessions import SessionStore
 from kiri.scheduling.store import JobStore, run_scheduler
 from kiri.skills import catalog
+from kiri.tools import shell
 from kiri.tools.reload import Restart
 from kiri.transports import registry as transports
 from kiri.turns import Dispatcher
@@ -47,7 +48,7 @@ async def start():
 
         async def supervised_scheduler():
             # A crash in the scheduler would otherwise die silently in its task;
-            # surface it to the owner so reminders/jobs going dark is visible.
+            # surface it to the owner so jobs going dark is visible.
             try:
                 await run_scheduler(store, execute, execute_event)
             except asyncio.CancelledError:
@@ -100,7 +101,7 @@ async def start():
 
         scheduler = asyncio.create_task(supervised_scheduler())
         resuming = asyncio.create_task(resume_pending())
-        reporting = asyncio.create_task(report_cut_runs(cut, transport, sessions))
+        reporting = asyncio.create_task(report_cut_runs(cut, dispatcher))
         try:
             await serve
         except asyncio.CancelledError:
@@ -112,14 +113,13 @@ async def start():
             reporting.cancel()
 
 
-async def report_cut_runs(runs, transport, sessions):
+async def report_cut_runs(runs, dispatcher):
     if not runs:
         return
-    await transport.ready()
+    await dispatcher.transport.ready()
     for run in runs:
         text = f"A restart cut off this background run before it finished:\n\n{run['instruction']}"
-        await transport.send(run["channel_id"], text)
-        sessions.note(run["channel_id"], f"You sent the owner this notice: {text}")
+        await _tell(dispatcher, run["channel_id"], text)
         db.Run.delete_by_id(run["id"])
 
 
@@ -132,21 +132,47 @@ _JOB_REPORT = (
 
 
 async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
-    channel = job["channel_id"]
-    late = time.time() - job["next_run"] > 60
-    due = clock.stamp(job["next_run"])
-    if job["cron"] is None:
-        text = f"reminder: {job['instruction']}"
-        if late:
-            text += f"\n(late: it was due {due}, while I was down)"
-        await dispatcher.transport.send(channel, text)
-        dispatcher.sessions.note(channel, f"You sent the owner this reminder: {text}")
+    if job["condition"]:
+        await check_watch(job, base_prompt, store, mcp_tools, dispatcher)
         return
 
     instruction = job["instruction"]
-    if late:
+    if time.time() - job["next_run"] > 60:
+        due = clock.stamp(job["next_run"])
         instruction = f"This job was due {due} and is running late because you were down.\n\n{instruction}"
-    await run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher, report=True)
+    await run_detached(job["channel_id"], instruction, base_prompt, store, mcp_tools, dispatcher, report=True)
+
+
+async def check_watch(job, base_prompt, store, mcp_tools, dispatcher):
+    channel = job["channel_id"]
+    code, output = await shell.execute(job["condition"], 120)
+    last = time.time() + job["every"] > job["expires"]
+    if code == 1 and not last:
+        return
+    if not store.complete(job["id"]):
+        return
+
+    if code == 0:
+        text = (
+            f"A watch you set just came true. Do what it asked: {job['instruction']}\n\n"
+            f"Its condition:\n{job['condition']}\n{output}"
+        )
+        await run_detached(channel, text, base_prompt, store, mcp_tools, dispatcher)
+        return
+    if code == 1:
+        until = clock.stamp(job["expires"])
+        await _tell(dispatcher, channel, f"watch {job['id']} ran out at {until} without coming true. It was set to: {job['instruction']}")
+        return
+    await _tell(
+        dispatcher,
+        channel,
+        f"watch {job['id']} stopped because its condition failed. It was set to: {job['instruction']}\n\n{output}",
+    )
+
+
+async def _tell(dispatcher, channel, text):
+    await dispatcher.transport.send(channel, text)
+    dispatcher.sessions.note(channel, f"You sent the owner this message: {text}")
 
 
 async def run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher, report=False):

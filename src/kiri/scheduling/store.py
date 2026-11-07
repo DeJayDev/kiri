@@ -33,6 +33,18 @@ class JobStore:
             created=time.time(),
         ).id
 
+    def add_watch(self, condition, instruction, channel_id, every, expires):
+        return Job.create(
+            cron=None,
+            condition=condition,
+            instruction=instruction,
+            channel_id=channel_id,
+            every=every,
+            expires=expires,
+            next_run=time.time() + every,
+            created=time.time(),
+        ).id
+
     def list(self, channel_id):
         return list(
             Job.select().where(Job.channel_id == channel_id).order_by(Job.id).dicts()
@@ -52,8 +64,13 @@ class JobStore:
     def reschedule(self, job_id, cron):
         Job.update(next_run=_next_run(cron)).where(Job.id == job_id).execute()
 
+    def defer(self, job_id, seconds):
+        Job.update(next_run=time.time() + seconds).where(Job.id == job_id).execute()
+
     def complete(self, job_id):
-        Job.delete().where(Job.id == job_id).execute()
+        # True only for the caller that removed the row, so two overlapping checks of
+        # one watch cannot both fire it.
+        return Job.delete().where(Job.id == job_id).execute() > 0
 
 
 async def run_scheduler(store, execute, execute_event):
@@ -72,8 +89,10 @@ async def run_scheduler(store, execute, execute_event):
         for job in store.due(time.time()):
             if job["cron"]:
                 store.reschedule(job["id"], job["cron"])
+            elif job["condition"]:
+                store.defer(job["id"], job["every"])
             else:
-                store.complete(job["id"])  # one-shot reminder, fire once
+                store.complete(job["id"])
             launch(execute(job))
         for name, body in events.take():
             launch(execute_event(name, body))
