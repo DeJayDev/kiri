@@ -28,6 +28,8 @@ async def start():
     base_prompt = "\n\n".join(filter(None, [prompt.load(), catalog.index()]))
     sessions = SessionStore(base_prompt)
     store = JobStore()
+    # Read before the scheduler starts, or this boot's own runs get reported as cut off.
+    cut = list(db.Run.select().dicts())
 
     async with AsyncExitStack() as stack:
         stack.push_async_callback(http.aclose)
@@ -98,6 +100,7 @@ async def start():
 
         scheduler = asyncio.create_task(supervised_scheduler())
         resuming = asyncio.create_task(resume_pending())
+        reporting = asyncio.create_task(report_cut_runs(cut, transport, sessions))
         try:
             await serve
         except asyncio.CancelledError:
@@ -106,6 +109,18 @@ async def start():
             loop.remove_signal_handler(signal.SIGTERM)
             scheduler.cancel()
             resuming.cancel()
+            reporting.cancel()
+
+
+async def report_cut_runs(runs, transport, sessions):
+    if not runs:
+        return
+    await transport.ready()
+    for run in runs:
+        text = f"A restart cut off this background run before it finished:\n\n{run['instruction']}"
+        await transport.send(run["channel_id"], text)
+        sessions.note(run["channel_id"], f"You sent the owner this notice: {text}")
+        db.Run.delete_by_id(run["id"])
 
 
 # A scheduled job runs with no owner watching, so a silent finish reads as a
@@ -125,7 +140,7 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
         if late:
             text += f"\n(late: it was due {due}, while I was down)"
         await dispatcher.transport.send(channel, text)
-        dispatcher.sessions.get(channel).note(f"You sent the owner this reminder: {text}")
+        dispatcher.sessions.note(channel, f"You sent the owner this reminder: {text}")
         return
 
     instruction = job["instruction"]
@@ -137,6 +152,7 @@ async def execute_job(job, base_prompt, store, mcp_tools, dispatcher):
 async def run_detached(channel, instruction, base_prompt, store, mcp_tools, dispatcher, report=False):
     transport = dispatcher.transport
     session = None
+    run = db.Run.create(channel_id=channel, instruction=instruction)
 
     async def turn():
         nonlocal session
@@ -182,4 +198,5 @@ async def run_detached(channel, instruction, base_prompt, store, mcp_tools, disp
             "A background run already sent the owner the text below, and they have it. "
             f"It is a record, not a message: do not reply to it or send it again.\n\n{delivered}"
         )
-    dispatcher.sessions.get(channel).note(note)
+    dispatcher.sessions.note(channel, note)
+    run.delete_instance()

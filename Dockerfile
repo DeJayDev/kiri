@@ -9,6 +9,9 @@ WORKDIR /app
 # The shell tool only sees what's in this image; add the CLIs you want Kiri to
 # have here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    poppler-utils \
     ripgrep \
     && rm -rf /var/lib/apt/lists/*
 

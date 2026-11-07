@@ -24,7 +24,7 @@ class _Base(peewee.Model):
         TABLES.append(cls)
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def bind(path=None):
@@ -50,6 +50,8 @@ def _migrate():
         )
     if version < 2:
         run_migrations(migrator.drop_column("sessions", "pinned"))
+    if version < 3:
+        run_migrations(migrator.add_column("sessions", "notes", Conversation.notes))
 
 
 def _baseline():
@@ -77,6 +79,7 @@ class Conversation(_Base):
     messages = peewee.TextField()
     summary = peewee.TextField()
     last_input_tokens = peewee.IntegerField()
+    notes = peewee.TextField(default="[]")
 
     class Meta:
         table_name = "sessions"
@@ -107,6 +110,17 @@ class Transcript(_Base):
 
     class Meta:
         table_name = "transcript"
+
+
+class Run(_Base):
+    # A detached run (scheduled job, event, background task) from start to finish.
+    # A row still here at boot is one a restart cut off.
+    id = peewee.AutoField()
+    channel_id = peewee.IntegerField()
+    instruction = peewee.TextField()
+
+    class Meta:
+        table_name = "runs"
 
 
 class Span(_Base):

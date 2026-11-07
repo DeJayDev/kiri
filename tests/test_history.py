@@ -45,3 +45,23 @@ def test_new_archives_the_conversation_it_clears():
 def test_another_channels_history_stays_out():
     SessionStore("base").archive(4, [{"role": "user", "content": "elsewhere"}])
     assert asyncio.run(history.build(3)({})) == "no earlier messages"
+
+
+def test_history_finds_messages_by_text_and_pages_within_the_matches():
+    SessionStore("base").archive(
+        3,
+        [
+            {"role": "user", "content": "the Bay Bridge took 40 min"},
+            {"role": "user", "content": "lunch?"},
+            {"role": "user", "content": "bridge is at 25 now"},
+        ],
+    )
+
+    out = asyncio.run(history.build(3)({"query": "bridge"}))
+    assert out.splitlines() == ["user: the Bay Bridge took 40 min", "user: bridge is at 25 now"]
+    assert asyncio.run(history.build(3)({"query": "bridge", "skip": 1})) == "user: the Bay Bridge took 40 min"
+
+
+def test_history_query_does_not_match_message_structure():
+    SessionStore("base").archive(3, [{"role": "user", "content": "lunch?"}])
+    assert asyncio.run(history.build(3)({"query": "role"})) == "no earlier messages contain 'role'"

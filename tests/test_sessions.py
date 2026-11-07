@@ -33,6 +33,23 @@ def test_drop_discards_a_turn_left_dangling_by_an_error():
 
 def test_a_dropped_turn_keeps_the_notes_waiting_for_the_owner():
     store = SessionStore("base")
-    store.get(1).note("job output")
+    store.note(1, "job output")
     store.drop(1)
     assert store.get(1).notes == ["job output"]
+
+
+def test_notes_survive_a_restart():
+    store = SessionStore("base")
+    store.save(store.get(1))
+    store.note(1, "job output")
+
+    assert SessionStore("base").get(1).notes == ["job output"]
+
+
+def test_a_note_during_a_turn_keeps_the_earlier_note_the_turn_has_not_checkpointed():
+    store = SessionStore("base")
+    store.note(1, "first job")
+    store.get(1).append_user("hi")
+    store.note(1, "second job")
+
+    assert SessionStore("base").get(1).notes == ["first job", "second job"]

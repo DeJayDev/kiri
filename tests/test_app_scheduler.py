@@ -1,7 +1,7 @@
 import asyncio
 import time
 
-from kiri import app
+from kiri import app, db
 from kiri.engine.context import Session
 from kiri.engine.providers.base import AuthRequired
 from kiri.tools.reload import Restart
@@ -23,6 +23,9 @@ class _Sessions:
 
     def get(self, channel_id):
         return self.session
+
+    def note(self, channel_id, text):
+        self.session.note(text)
 
     def archive(self, channel_id, messages):
         pass
@@ -155,3 +158,47 @@ def test_a_failed_detached_run_notes_the_error_without_calling_it_a_record(monke
     [note] = dispatcher.sessions.session.notes
     assert "failed" in note and "job error: tool exploded" in note and "check PRs" in note
     assert "do not reply" not in note
+
+
+def test_a_finished_detached_run_leaves_no_trace(monkeypatch):
+    async def fake_run_turn(session, text, store, mcp_tools, transport):
+        return "ok"
+
+    monkeypatch.setattr(app.conversation, "run_turn", fake_run_turn)
+
+    asyncio.run(app.run_detached(5, "tick", "base", None, [], _Dispatcher()))
+
+    assert list(db.Run.select()) == []
+
+
+def test_a_detached_run_cut_off_mid_turn_stays_recorded(monkeypatch):
+    async def cut_off(session, text, store, mcp_tools, transport):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app.conversation, "run_turn", cut_off)
+
+    try:
+        asyncio.run(app.run_detached(5, "long research", "base", None, [], _Dispatcher()))
+    except asyncio.CancelledError:
+        pass
+
+    assert [run.instruction for run in db.Run.select()] == ["long research"]
+
+
+def test_boot_tells_the_owner_which_runs_were_cut_off():
+    db.Run.create(channel_id=5, instruction="long research")
+    runs = list(db.Run.select().dicts())
+    dispatcher = _Dispatcher()
+
+    async def ready():
+        pass
+
+    dispatcher.transport.ready = ready
+
+    asyncio.run(app.report_cut_runs(runs, dispatcher.transport, dispatcher.sessions))
+
+    [(channel, text)] = dispatcher.transport.sent
+    assert channel == 5 and text.endswith("long research")
+    [note] = dispatcher.sessions.session.notes
+    assert "long research" in note
+    assert list(db.Run.select()) == []

@@ -103,6 +103,9 @@ class _Dispatcher:
     def get(self, channel_id):
         return self.session
 
+    def note(self, channel_id, text):
+        self.session.note(text)
+
     def archive(self, channel_id, messages):
         self.archived = messages
 

@@ -31,11 +31,21 @@ class SessionStore:
 
     def drop(self, channel_id):
         # Forget the in-memory session; the next get() reloads the last saved
-        # state, discarding any half-finished turn. Pending notes live only in
-        # memory, so they carry over or a job's output is lost with the turn.
-        stale = self._sessions.pop(channel_id, None)
-        if stale and stale.notes:
-            self.get(channel_id).notes = stale.notes
+        # state, discarding any half-finished turn.
+        self._sessions.pop(channel_id, None)
+
+    def note(self, channel_id, text):
+        session = self.get(channel_id)
+        session.note(text)
+        row = Conversation.get_or_none(Conversation.channel_id == channel_id)
+        if row is None:
+            self.save(session)
+            return
+        # Appended to the stored list rather than saving the session: a live turn may
+        # be mid tool call, and may have folded earlier notes into a message that is
+        # not checkpointed yet.
+        notes = json.dumps([*json.loads(row.notes), text])
+        Conversation.update(notes=notes).where(Conversation.channel_id == channel_id).execute()
 
     def _load(self, channel_id):
         row = Conversation.get_or_none(Conversation.channel_id == channel_id)
@@ -45,6 +55,7 @@ class SessionStore:
         session.messages = json.loads(row.messages)
         session.summary = row.summary
         session.last_input_tokens = row.last_input_tokens
+        session.notes = json.loads(row.notes)
         return session
 
     def archive(self, channel_id, messages):
@@ -61,4 +72,5 @@ class SessionStore:
             messages=json.dumps(session.messages),
             summary=session.summary,
             last_input_tokens=session.last_input_tokens,
+            notes=json.dumps(session.notes),
         ).execute()

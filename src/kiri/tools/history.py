@@ -1,4 +1,5 @@
 import json
+from itertools import islice
 
 from kiri.db import Transcript
 from kiri.engine.context import _render
@@ -13,6 +14,7 @@ SCHEMA = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "query": {"type": "string", "description": "Only messages containing this text, case-insensitive."},
             "count": {"type": "integer", "description": "How many messages. Defaults to 20."},
             "skip": {"type": "integer", "description": "Skip this many of the newest first, to page back."},
         },
@@ -22,14 +24,23 @@ SCHEMA = {
 
 def build(channel_id):
     async def history(args):
+        query = (args.get("query") or "").lower()
         rows = (
             Transcript.select()
             .where(Transcript.channel_id == channel_id)
+            # Rows are stored as JSON, so the query is matched in its JSON-escaped
+            # form; the rendered check below drops hits on keys like "type" or "text".
+            .where(Transcript.message.contains(json.dumps(query)[1:-1]))
             .order_by(Transcript.id.desc())
-            .offset(args.get("skip") or 0)
-            .limit(args.get("count") or 20)
         )
-        messages = [json.loads(row.message) for row in reversed(list(rows))]
-        return _render(messages) or "no earlier messages"
+        messages = (json.loads(row.message) for row in rows.iterator())
+        matches = (m for m in messages if query in _render([m]).lower())
+        skip = args.get("skip") or 0
+        page = list(islice(matches, skip, skip + (args.get("count") or 20)))
+        if page:
+            return _render(page[::-1])
+        if query:
+            return f"no earlier messages contain {args['query']!r}"
+        return "no earlier messages"
 
     return history
