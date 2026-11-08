@@ -200,6 +200,17 @@ def test_xai_adds_reasoning_tokens_to_output():
     assert openai.OpenAI().output_tokens(usage) == 1
 
 
+def test_xai_pins_every_request_to_one_cache_server_without_sending_the_owner_id(monkeypatch):
+    monkeypatch.setattr(config, "XAI_API_KEY", "k")
+    monkeypatch.setattr(config, "OWNER_ID", 1506557725293674608)
+
+    first = asyncio.run(xai.XAI().headers())["x-grok-conv-id"]
+    again = asyncio.run(xai.XAI().headers())["x-grok-conv-id"]
+
+    assert first == again
+    assert "1506557725293674608" not in first
+
+
 def test_xai_rejects_a_substituted_model():
     try:
         xai.XAI().check_model("grok-4", {"model": "grok-4.3"})

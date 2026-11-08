@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import time
 
 from kiri import config, http
@@ -162,7 +163,14 @@ class XAI(OpenAI):
 
     async def headers(self):
         token = self.key() or await self.token()
-        return {"authorization": f"Bearer {token}", "content-type": "application/json"}
+        # xAI keeps its prompt cache per server and routes on this id. Without it a
+        # request can land on a server that never saw the prefix and prefill it all.
+        conversation = hashlib.sha256(f"kiri-{config.OWNER_ID}".encode()).hexdigest()[:32]
+        return {
+            "authorization": f"Bearer {token}",
+            "content-type": "application/json",
+            "x-grok-conv-id": conversation,
+        }
 
     def output_tokens(self, usage):
         # xAI excludes reasoning tokens from completion_tokens; OpenAI includes them.
