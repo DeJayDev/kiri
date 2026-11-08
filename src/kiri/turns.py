@@ -177,7 +177,7 @@ class Dispatcher:
         try:
             async with self.transport.typing(channel):
                 # /retry resumes from the last checkpoint, which already holds the
-                # owner's message, exactly like a reload resume.
+                # owner's message.
                 text, images = None, None
                 if command != "/retry":
                     text = await self._text(inbound)

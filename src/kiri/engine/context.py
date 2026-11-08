@@ -54,7 +54,10 @@ class Session:
 
     def unanswered(self):
         # Checkpoints land at the top of each model request, so a saved session that
-        # ends on a user turn is one whose request never got its response.
+        # ends on a user turn is one whose request never got its response. A shutdown
+        # mid tool call saves one that ends on the call instead.
+        if self._dangling_tool_results():
+            return True
         return bool(self.messages) and self.messages[-1]["role"] == "user"
 
     def note(self, text):

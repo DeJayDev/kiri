@@ -2,7 +2,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from kiri import config, resume, turns
+from kiri import app, config, resume, turns
 from kiri.engine.context import Session
 from kiri.engine.sessions import SessionStore
 from kiri.scheduling import events
@@ -18,6 +18,9 @@ class _Transport:
 
     async def send(self, channel_id, text):
         self.sent.append(text)
+
+    async def ready(self):
+        pass
 
     @asynccontextmanager
     async def typing(self, channel_id):
@@ -69,6 +72,58 @@ def test_retry_resumes_an_unanswered_checkpoint_without_new_text(monkeypatch):
 
     assert calls == [None]
     assert transport.sent == ["done"]
+
+
+def test_retry_resumes_a_turn_cut_off_mid_tool_call(monkeypatch):
+    dispatcher, transport, sessions = _dispatcher()
+    session = sessions.get(1)
+    session.messages = [
+        {"role": "user", "content": "run it"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "a", "name": "shell", "input": {}}]},
+    ]
+    calls = []
+
+    async def turn(session, text, images=None):
+        calls.append(text)
+        return "done"
+
+    monkeypatch.setattr(dispatcher, "_turn", turn)
+    _say(dispatcher, "/retry")
+
+    assert calls == [None]
+    assert transport.sent == ["done"]
+
+
+def test_a_message_sent_while_a_reload_resumes_waits_for_that_turn(monkeypatch):
+    dispatcher, transport, sessions = _dispatcher()
+    session = sessions.get(1)
+    session.messages = [
+        {"role": "user", "content": "git pull and reload"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "r", "name": "reload", "input": {}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "r", "content": "reloaded"}]},
+    ]
+    resume.mark(1)
+    calls = []
+    release = asyncio.Event()
+
+    async def turn(session, text, images=None):
+        calls.append(text)
+        await release.wait()
+        return f"answered {text}"
+
+    monkeypatch.setattr(dispatcher, "_turn", turn)
+
+    async def go():
+        await app.resume_pending(dispatcher)
+        resuming = dispatcher.tasks[1]
+        second = await dispatcher.on_message(Inbound(channel_id=1, text="did you pull?"))
+        release.set()
+        await resuming
+        return second
+
+    assert asyncio.run(go()) is None
+    assert calls == [None, "did you pull?"]
+    assert transport.sent == ["reloaded.", "answered None", "answered did you pull?"]
 
 
 def test_retry_with_nothing_unanswered_says_so(monkeypatch):

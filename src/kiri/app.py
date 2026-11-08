@@ -15,6 +15,7 @@ from kiri.skills import catalog
 from kiri.tools import shell
 from kiri.tools.reload import Restart
 from kiri.transports import registry as transports
+from kiri.transports.base import Inbound
 from kiri.turns import COMMANDS, Dispatcher
 
 
@@ -56,33 +57,6 @@ async def start():
             except Exception:
                 await transport.notify_owner(f"scheduler crashed:\n{traceback.format_exc()}")
 
-        async def resume_pending():
-            interrupted = resume.take_inflight()
-            channel = resume.take()
-            # This runs concurrently with transport.run(), so the first send of the
-            # boot has to wait for the transport to be connected.
-            if channel is None:
-                if interrupted is not None:
-                    await transport.ready()
-                    await transport.send(
-                        interrupted,
-                        "I went down mid-turn without a clean shutdown. "
-                        "Send /retry to pick up from the last checkpoint.",
-                    )
-                return
-            await transport.ready()
-            await transport.send(channel, "reloaded.")
-            session = sessions.get(channel)
-            try:
-                reply = await conversation.run_turn(session, None, store, mcp_tools, transport)
-            except Exception as exc:
-                sessions.drop(channel)
-                await transport.send(channel, f"error: {exc}")
-                return
-            sessions.save(session)
-            if reply:
-                await transport.send(channel, reply)
-
         serve = asyncio.create_task(transport.run(dispatcher.on_message, COMMANDS))
 
         def graceful_stop():
@@ -100,7 +74,7 @@ async def start():
         loop.add_signal_handler(signal.SIGTERM, graceful_stop)
 
         scheduler = asyncio.create_task(supervised_scheduler())
-        resuming = asyncio.create_task(resume_pending())
+        resuming = asyncio.create_task(resume_pending(dispatcher))
         reporting = asyncio.create_task(report_cut_runs(cut, dispatcher))
         reporting_mcp = asyncio.create_task(report_failed_mcp(mcp_failed, dispatcher))
         try:
@@ -113,6 +87,27 @@ async def start():
             resuming.cancel()
             reporting.cancel()
             reporting_mcp.cancel()
+
+
+async def resume_pending(dispatcher):
+    transport = dispatcher.transport
+    interrupted = resume.take_inflight()
+    channel = resume.take()
+    if channel is None and interrupted is None:
+        return
+    # This runs concurrently with transport.run(), so the first send of the boot has
+    # to wait for the transport to be connected.
+    await transport.ready()
+    if channel is None:
+        await transport.send(
+            interrupted,
+            "I went down mid-turn without a clean shutdown. Send /retry to pick up from the last checkpoint.",
+        )
+        return
+    # Queued before the notice goes out, so a message the owner sends from here on
+    # folds into this turn instead of starting a second one on the session.
+    await dispatcher.on_message(Inbound(channel_id=channel, text="/retry"))
+    await transport.send(channel, "reloaded.")
 
 
 async def report_failed_mcp(failed, dispatcher):
