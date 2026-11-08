@@ -97,7 +97,7 @@ class _FakeLoopback:
 
     def __init__(self):
         self.result = asyncio.get_running_loop().create_future()
-        self.result.set_result(("code", self.returned_state))
+        self.result.set_result({"code": "code", "state": self.returned_state})
 
     async def start(self):
         return "http://127.0.0.1:1/callback"

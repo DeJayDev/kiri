@@ -3,8 +3,7 @@ import os
 import re
 from contextlib import AsyncExitStack
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.types import ImageContent
@@ -33,58 +32,50 @@ def _flatten(result):
     texts, images = [], []
     for item in result.content:
         if isinstance(item, ImageContent):
-            if not viewable(item.mimeType, len(item.data) * 3 // 4):
-                texts.append(f"[a {item.mimeType} image was left out: not a type or size you can view]")
+            if not viewable(item.mime_type, len(item.data) * 3 // 4):
+                texts.append(f"[a {item.mime_type} image was left out: not a type or size you can view]")
                 continue
-            source = {"type": "base64", "media_type": item.mimeType, "data": item.data}
+            source = {"type": "base64", "media_type": item.mime_type, "data": item.data}
             images.append({"type": "image", "source": source})
             continue
         text = getattr(item, "text", None)
         texts.append(text if text is not None else str(item))
     out = _cap("\n".join(texts))
-    if getattr(result, "isError", False):
+    if result.is_error:
         out = f"error: {out}"
     if not images:
         return out
     return [{"type": "text", "text": out}, *images] if out else images
 
 
-def _runner(session, tool_name):
+def _runner(client, tool_name):
     async def run(args):
-        result = await session.call_tool(tool_name, args)
+        result = await client.call_tool(tool_name, args)
         return _flatten(result)
 
     return run
 
 
-async def _connect(name, spec, stack):
+async def _server(name, spec, stack):
     if not spec.get("url"):
-        params = StdioServerParameters(
+        return StdioServerParameters(
             command=spec["command"],
             args=spec.get("args", []),
             env={**os.environ, **spec.get("env", {})},
         )
-        read, write = await stack.enter_async_context(stdio_client(params))
-        return read, write
 
     if spec.get("headers"):
-        client = create_mcp_http_client(headers=spec["headers"])
-        read, write, _ = await stack.enter_async_context(
-            streamable_http_client(spec["url"], http_client=client)
-        )
-        return read, write
-
-    # A remote server with no stored token needs a browser, which boot can't do.
-    # Fail it rather than hang the bot on a login it can't perform.
-    if not credentials.get(mcp_auth.key(name)):
+        http_client = create_mcp_http_client(headers=spec["headers"])
+    elif credentials.get(mcp_auth.key(name)):
+        http_client = create_mcp_http_client(auth=mcp_auth.runtime_provider(name, spec["url"]))
+    else:
+        # A remote server with no stored token needs a browser, which boot can't do.
+        # Fail it rather than hang the bot on a login it can't perform.
         raise RuntimeError(f"not authorized, run `kiri mcp {name}`")
 
-    auth = mcp_auth.runtime_provider(name, spec["url"])
-    client = create_mcp_http_client(auth=auth)
-    read, write, _ = await stack.enter_async_context(
-        streamable_http_client(spec["url"], http_client=client)
-    )
-    return read, write
+    # Passed in, so the transport leaves closing it to us.
+    await stack.enter_async_context(http_client)
+    return streamable_http_client(spec["url"], http_client=http_client)
 
 
 def _reason(exc):
@@ -112,10 +103,8 @@ async def load(config_path, stack):
         # to the owner instead, and its tools are absent until a reload.
         try:
             async with AsyncExitStack() as server:
-                read, write = await _connect(name, spec, server)
-                session = await server.enter_async_context(ClientSession(read, write))
-                await session.initialize()
-                listed = await session.list_tools()
+                client = await server.enter_async_context(Client(await _server(name, spec, server)))
+                listed = await client.list_tools()
                 started = server.pop_all()
         except Exception as exc:
             failed.append((name, _reason(exc)))
@@ -135,7 +124,7 @@ async def load(config_path, stack):
             schema = {
                 "name": qualified,
                 "description": tool.description or "",
-                "input_schema": tool.inputSchema,
+                "input_schema": tool.input_schema,
             }
-            tools.append((schema, _runner(session, tool.name)))
+            tools.append((schema, _runner(client, tool.name)))
     return tools, failed

@@ -53,7 +53,8 @@ class Loopback:
         if self.result.done():
             return
         if code:
-            self.result.set_result((code, params.get("state", [None])[0]))
+            # Every field, not just code and state: an MCP server's login also checks iss (RFC 9207).
+            self.result.set_result({name: values[0] for name, values in params.items()})
         else:
             self.result.set_exception(RuntimeError(f"oauth: authorization denied ({error})"))
 
@@ -150,19 +151,19 @@ class OAuth:
         open_browser(url)
 
         try:
-            code, returned = await loopback.result
+            answer = await loopback.result
         finally:
             await loopback.close()
 
         # Without this an attacker's code could be swapped in and Kiri would store
         # a token to the attacker's account.
-        if returned != state:
+        if answer.get("state") != state:
             raise RuntimeError(f"{self.name}: oauth state mismatch, login rejected")
 
         status, data = await self._form(
             {
                 "grant_type": "authorization_code",
-                "code": code,
+                "code": answer["code"],
                 "redirect_uri": redirect_uri,
                 "client_id": self.client_id,
                 "code_verifier": verifier,

@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 from tenacity import (
     AsyncRetrying,
     retry_if_exception,
@@ -16,9 +16,9 @@ _RETRY_STATUS = {408, 429, 500, 502, 503, 504, 529}
 def client():
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(
-            timeout=httpx.Timeout(600.0),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+        _client = httpx2.AsyncClient(
+            timeout=httpx2.Timeout(600.0),
+            limits=httpx2.Limits(max_keepalive_connections=10, max_connections=20),
         )
     return _client
 
@@ -32,7 +32,7 @@ async def aclose():
 
 
 def _retry_after(resp):
-    if not isinstance(resp, httpx.Response):
+    if not isinstance(resp, httpx2.Response):
         return None
     value = resp.headers.get("retry-after")
     if not value:
@@ -63,14 +63,14 @@ def _last_outcome(state):
 
 def _retryable(exc):
     # A read timeout stacks: four of them is four full timeouts on one turn.
-    if isinstance(exc, httpx.ReadTimeout | httpx.WriteTimeout):
+    if isinstance(exc, httpx2.ReadTimeout | httpx2.WriteTimeout):
         return False
-    return isinstance(exc, httpx.TransportError)
+    return isinstance(exc, httpx2.TransportError)
 
 
 async def request(
     method, url, headers=None, json=None, data=None, timeout=None, retry=True
-) -> httpx.Response:
+) -> httpx2.Response:
     async def attempt():
         return await client().request(
             method, url, headers=headers, json=json, data=data, timeout=timeout

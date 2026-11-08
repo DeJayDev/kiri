@@ -1,13 +1,13 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 
 from kiri import http
 
 
 def _response(status):
-    return httpx.Response(status, request=httpx.Request("POST", "http://x"))
+    return httpx2.Response(status, request=httpx2.Request("POST", "http://x"))
 
 
 class _FakeClient:
@@ -24,7 +24,7 @@ class _FakeClient:
 
 
 def _timeout():
-    return httpx.ReadTimeout("hung", request=httpx.Request("POST", "http://x"))
+    return httpx2.ReadTimeout("hung", request=httpx2.Request("POST", "http://x"))
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +49,7 @@ def test_retries_429_then_succeeds(monkeypatch):
 
 
 def test_retries_overloaded_and_connection_drops(monkeypatch):
-    outcomes = [_response(529), httpx.ConnectError("boom"), _response(200)]
+    outcomes = [_response(529), httpx2.ConnectError("boom"), _response(200)]
     resp, fake = _run(monkeypatch, outcomes)
     assert resp.status_code == 200
     assert fake.calls == 3
@@ -68,16 +68,16 @@ def test_gives_up_and_returns_the_last_response(monkeypatch):
 
 
 def test_gives_up_and_raises_the_transport_error(monkeypatch):
-    fake = _FakeClient([httpx.ConnectError("down")] * 4)
+    fake = _FakeClient([httpx2.ConnectError("down")] * 4)
     monkeypatch.setattr(http, "client", lambda: fake)
-    with pytest.raises(httpx.ConnectError):
+    with pytest.raises(httpx2.ConnectError):
         asyncio.run(http.request("POST", "http://x"))
 
 
 def test_does_not_retry_a_read_timeout(monkeypatch):
     fake = _FakeClient([_timeout()])
     monkeypatch.setattr(http, "client", lambda: fake)
-    with pytest.raises(httpx.ReadTimeout):
+    with pytest.raises(httpx2.ReadTimeout):
         asyncio.run(http.request("POST", "http://x"))
     assert fake.calls == 1
 
@@ -108,8 +108,8 @@ class _Outcome:
 
 
 def test_retry_after_header_beats_the_backoff_curve():
-    resp = httpx.Response(
-        429, headers={"retry-after": "2.5"}, request=httpx.Request("POST", "http://x")
+    resp = httpx2.Response(
+        429, headers={"retry-after": "2.5"}, request=httpx2.Request("POST", "http://x")
     )
     assert http._retry_after(resp) == 2.5
     assert http._wait(_State(resp)) == 2.5
@@ -117,8 +117,8 @@ def test_retry_after_header_beats_the_backoff_curve():
 
 
 def test_retry_after_is_capped():
-    resp = httpx.Response(
-        429, headers={"retry-after": "3600"}, request=httpx.Request("POST", "http://x")
+    resp = httpx2.Response(
+        429, headers={"retry-after": "3600"}, request=httpx2.Request("POST", "http://x")
     )
     assert http._retry_after(resp) == 3600.0
     assert http._wait(_State(resp)) == 30.0

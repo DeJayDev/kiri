@@ -1,8 +1,13 @@
-from mcp import ClientSession
+from mcp import Client
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
 
 from kiri.auth import credentials
 from kiri.auth.oauth import Loopback, open_browser
@@ -74,22 +79,23 @@ async def login(name, url):
         print(f"opening browser:\n  {auth_url}")
         open_browser(auth_url)
 
+    async def callback_handler():
+        return AuthorizationCodeResult.model_validate(await loopback.result)
+
     provider = OAuthClientProvider(
         server_url=url,
         client_metadata=_metadata(redirect_uri),
         storage=Storage(name),
         redirect_handler=redirect_handler,
-        callback_handler=lambda: loopback.result,
+        callback_handler=callback_handler,
     )
 
     try:
         # Any authenticated request drives the whole flow: discovery, dynamic
         # registration, the browser round-trip, then the token exchange.
-        client = create_mcp_http_client(auth=provider)
-        async with streamable_http_client(url, http_client=client) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                listed = await session.list_tools()
+        async with create_mcp_http_client(auth=provider) as http_client:
+            async with Client(streamable_http_client(url, http_client=http_client)) as client:
+                listed = await client.list_tools()
                 return [tool.name for tool in listed.tools]
     finally:
         await loopback.close()
