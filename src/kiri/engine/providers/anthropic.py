@@ -1,5 +1,3 @@
-import json
-
 from kiri import config, http
 from kiri.engine.providers.base import Provider, ProviderError, normalize_usage
 
@@ -52,7 +50,7 @@ class Anthropic(Provider):
             "content-type": "application/json",
         }
 
-    async def complete(self, system, messages, tools, model=None, on_text=None):
+    async def complete(self, system, messages, tools, model=None):
         gap = self.missing()
         if gap:
             raise RuntimeError(f"{self.name}: not configured ({gap})")
@@ -66,14 +64,11 @@ class Anthropic(Provider):
         if tools:
             body["tools"] = tools
 
-        if on_text:
-            data = await self._stream(body, on_text)
-        else:
-            resp = await http.request("POST", self.url, headers=await self.headers(), json=body)
-            if resp.status_code != 200:
-                raise ProviderError(self.name, resp.status_code, resp.text)
-            data = resp.json()
+        resp = await http.request("POST", self.url, headers=await self.headers(), json=body)
+        if resp.status_code != 200:
+            raise ProviderError(self.name, resp.status_code, resp.text)
 
+        data = resp.json()
         # Thinking is never kept. A block sent back after compaction or a trimmed tool
         # result changed the history before it is a 400, and the checkpoint replays it.
         data["content"] = [b for b in data["content"] if b["type"] not in {"thinking", "redacted_thinking"}]
@@ -85,54 +80,6 @@ class Anthropic(Provider):
             cache_write=usage.get("cache_creation_input_tokens", 0),
         )
         return data
-
-    async def _stream(self, body, on_text):
-        resp = await http.request(
-            "POST", self.url, headers=await self.headers(), json={**body, "stream": True}, stream=True
-        )
-        try:
-            if resp.status_code != 200:
-                await resp.aread()
-                raise ProviderError(self.name, resp.status_code, resp.text)
-            return await self._read_events(resp, on_text)
-        finally:
-            await resp.aclose()
-
-    async def _read_events(self, resp, on_text):
-        message = {}
-        partial_json = {}
-        async for line in resp.aiter_lines():
-            if not line.startswith("data:"):
-                continue
-            event = json.loads(line[5:])
-            kind = event["type"]
-            if kind == "message_start":
-                message = event["message"]
-            elif kind == "content_block_start":
-                message["content"].append(event["content_block"])
-            elif kind == "content_block_delta":
-                index = event["index"]
-                block = message["content"][index]
-                delta = event["delta"]
-                if delta["type"] == "text_delta":
-                    block["text"] += delta["text"]
-                    on_text(delta["text"])
-                elif delta["type"] == "input_json_delta":
-                    partial_json[index] = partial_json.get(index, "") + delta["partial_json"]
-                elif delta["type"] not in {"thinking_delta", "signature_delta"}:
-                    raise ProviderError(self.name, 200, f"unknown stream delta: {json.dumps(delta)}")
-            elif kind == "content_block_stop":
-                index = event["index"]
-                if index in partial_json:
-                    message["content"][index]["input"] = json.loads(partial_json.pop(index) or "{}")
-            elif kind == "message_delta":
-                message.update(event["delta"])
-                # Cumulative counts; a field the event leaves null keeps message_start's value.
-                usage = {k: v for k, v in event.get("usage", {}).items() if v is not None}
-                message["usage"] = {**message.get("usage", {}), **usage}
-            elif kind == "error":
-                raise ProviderError(self.name, 200, json.dumps(event["error"]))
-        return message
 
 
 class OpenRouter(Anthropic):

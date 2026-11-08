@@ -16,30 +16,11 @@ def test_summary_reports_percentiles_and_errors_per_operation():
     assert (p50, p95) == (300, 1000)
 
 
-def test_a_streamed_llm_call_records_time_to_first_text():
-    class _Provider:
-        name = "fake"
-
-        async def complete(self, system, messages, tools, model=None, on_text=None):
-            await asyncio.sleep(0.01)
-            on_text("hi")
-            return {"content": [], "usage": {}}
-
-    llm.use(_Provider(), timer=spans.record)
-    try:
-        asyncio.run(llm.complete("sys", [], None, model="m", on_text=lambda d: None))
-    finally:
-        llm.use(None)
-
-    rows = {(kind, name): count for kind, name, count, *_ in spans.summary()}
-    assert rows == {("llm", "fake/m"): 1, ("ttft", "fake/m"): 1}
-
-
 def test_a_failed_llm_call_is_recorded_as_an_error():
     class _Provider:
         name = "fake"
 
-        async def complete(self, system, messages, tools, model=None, on_text=None):
+        async def complete(self, system, messages, tools, model=None):
             raise RuntimeError("down")
 
     llm.use(_Provider(), timer=spans.record)

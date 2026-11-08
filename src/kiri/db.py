@@ -24,7 +24,7 @@ class _Base(peewee.Model):
         TABLES.append(cls)
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def bind(path=None):
@@ -58,6 +58,9 @@ def _migrate():
             migrator.add_column("jobs", "every", Job.every),
             migrator.add_column("jobs", "expires", Job.expires),
         )
+    # A database from before the spans table gets it fresh from create_tables, without the column.
+    if version < 5 and "first_token_ms" in {column.name for column in database.get_columns("spans")}:
+        run_migrations(migrator.drop_column("spans", "first_token_ms"))
 
 
 def _baseline():
@@ -142,8 +145,6 @@ class Span(_Base):
     kind = peewee.TextField()
     name = peewee.TextField()
     ms = peewee.FloatField()
-    # Streamed llm requests only: how long until the first text arrived.
-    first_token_ms = peewee.FloatField(null=True)
     ok = peewee.BooleanField()
 
     class Meta:

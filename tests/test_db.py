@@ -65,3 +65,23 @@ def test_a_version_3_database_keeps_its_jobs_and_can_hold_watches(tmp_path):
 
     job = db.Job.get_by_id(1)
     assert (job.cron, job.condition, job.every, job.expires) == ("0 9 * * *", None, None, None)
+
+
+def test_a_version_4_database_loses_the_time_to_first_token_column(tmp_path):
+    db.database.close()
+    path = str(tmp_path / "old.db")
+    raw = sqlite3.connect(path)
+    raw.executescript(
+        """
+        CREATE TABLE spans (id INTEGER PRIMARY KEY, ts REAL, kind TEXT, name TEXT, ms REAL, first_token_ms REAL, ok INTEGER);
+        INSERT INTO spans VALUES (1, 0, 'llm', 'xai/grok', 900, 300, 1);
+        PRAGMA user_version = 4;
+        """
+    )
+    raw.close()
+
+    db.bind(path)
+
+    columns = {c.name for c in db.database.get_columns("spans")}
+    assert "first_token_ms" not in columns
+    assert db.Span.get_by_id(1).ms == 900

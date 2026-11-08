@@ -225,20 +225,17 @@ async def run_detached(channel, instruction, base_prompt, store, mcp_tools, disp
         failed = True
         reply = f"job error: {exc}"
 
-    if reply is not None:
-        await transport.send(channel, reply)
+    await transport.send(channel, reply)
     dispatcher.sessions.archive(channel, [*session.archived, *session.messages])
-    # None means the live preview already showed it; the run's session holds the text.
-    delivered = reply if reply is not None else llm.text_of(session.messages[-1]["content"])
     if failed:
         note = (
             "A background run failed, and the owner was already sent the error below. "
-            f"Bring it up if it bears on what they say next.\n\nIt was running:\n{instruction}\n\n{delivered}"
+            f"Bring it up if it bears on what they say next.\n\nIt was running:\n{instruction}\n\n{reply}"
         )
     else:
         note = (
             "A background run already sent the owner the text below, and they have it. "
-            f"It is a record, not a message: do not reply to it or send it again.\n\n{delivered}"
+            f"It is a record, not a message: do not reply to it or send it again.\n\n{reply}"
         )
     dispatcher.sessions.note(channel, note)
     run.delete_instance()

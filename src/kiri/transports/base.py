@@ -19,11 +19,6 @@ class Transport:
         # Where unaddressed work, such as a dropped event file, reports.
         raise NotImplementedError
 
-    def live(self, channel_id):
-        # A streamed-reply preview: feed(delta) as text arrives, then close(final)
-        # returns True when the preview now shows final. None means no streaming.
-        return None
-
 
 @dataclass
 class Inbound:

@@ -198,8 +198,7 @@ class Dispatcher:
                     reply = await self._turn(session, None)
 
             self.sessions.save(session)
-            if reply is not None:
-                await self.transport.send(channel, reply)
+            await self.transport.send(channel, reply)
         except Restart:
             self.sessions.save(session)
             resume.mark(channel)

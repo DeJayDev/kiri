@@ -16,30 +16,19 @@ def use(chat, summarizer=None, sink=None, timer=None):
     _timer = timer
 
 
-async def _run(provider, system, messages, tools, model, on_text=None):
+async def _run(provider, system, messages, tools, model):
     if provider is None:
         raise RuntimeError("no provider configured; app.start() wires this up")
 
     started = time.monotonic()
-    first = None
-
-    def first_text(delta):
-        nonlocal first
-        if first is None:
-            first = time.monotonic()
-        on_text(delta)
-
     name = f"{provider.name}/{model or config.MODEL}"
     ok = False
     try:
-        data = await provider.complete(
-            system, messages, tools, model=model, on_text=first_text if on_text else None
-        )
+        data = await provider.complete(system, messages, tools, model=model)
         ok = True
     finally:
         if _timer:
-            first_ms = None if first is None else (first - started) * 1000
-            _timer("llm", name, (time.monotonic() - started) * 1000, ok, first_ms)
+            _timer("llm", name, (time.monotonic() - started) * 1000, ok)
 
     # Every completion is billed, including the summarizer's. Reported here so the
     # sink doesn't have to be threaded through every caller.
@@ -48,8 +37,8 @@ async def _run(provider, system, messages, tools, model, on_text=None):
     return data
 
 
-async def complete(system, messages, tools, model=None, on_text=None):
-    return await _run(_chat, system, messages, tools, model, on_text)
+async def complete(system, messages, tools, model=None):
+    return await _run(_chat, system, messages, tools, model)
 
 
 async def summarize(system, messages, model=None):

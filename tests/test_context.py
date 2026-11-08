@@ -88,7 +88,7 @@ def test_compaction_reports_its_tokens_to_the_usage_sink(monkeypatch):
     class _Provider:
         name = "fake"
 
-        async def complete(self, system, messages, tools, model=None, on_text=None):
+        async def complete(self, system, messages, tools, model=None):
             return {
                 "content": [{"type": "text", "text": "BRIEF"}],
                 "usage": {"input_tokens": 900, "output_tokens": 30},

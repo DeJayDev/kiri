@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from kiri.db import Span
 
 
-def record(kind, name, ms, ok=True, first_token_ms=None):
-    Span.create(ts=time.time(), kind=kind, name=name, ms=ms, first_token_ms=first_token_ms, ok=ok)
+def record(kind, name, ms, ok=True):
+    Span.create(ts=time.time(), kind=kind, name=name, ms=ms, ok=ok)
 
 
 @asynccontextmanager
@@ -28,13 +28,10 @@ def summary(days=7):
     groups = {}
     for span in Span.select().where(Span.ts >= since).order_by(Span.id):
         groups.setdefault((span.kind, span.name), []).append(span)
-        if span.first_token_ms is not None:
-            groups.setdefault(("ttft", span.name), []).append(span)
 
     rows = []
     for (kind, name), spans in sorted(groups.items()):
-        field = "first_token_ms" if kind == "ttft" else "ms"
-        values = sorted(getattr(span, field) for span in spans)
+        values = sorted(span.ms for span in spans)
         errors = sum(1 for span in spans if not span.ok)
         rows.append((kind, name, len(values), _percentile(values, 0.5), _percentile(values, 0.95), errors))
     return rows

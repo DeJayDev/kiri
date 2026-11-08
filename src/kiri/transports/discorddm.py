@@ -1,4 +1,3 @@
-import asyncio
 import io
 import os
 from contextlib import asynccontextmanager
@@ -170,58 +169,6 @@ class _AnswerView(discord.ui.View):
         return callback
 
 
-class _Live:
-    def __init__(self, transport, channel_id):
-        self._transport = transport
-        self._channel_id = channel_id
-        self._text = ""
-        self._message = None
-        self._closed = asyncio.Event()
-        self._task = None
-
-    def feed(self, delta):
-        self._text += delta
-        if self._task is None:
-            self._task = asyncio.create_task(self._follow())
-
-    async def _follow(self):
-        # Discord rate-limits edits, so the preview catches up once a second
-        # instead of on every delta.
-        shown = ""
-        while True:
-            try:
-                await asyncio.wait_for(self._closed.wait(), 1)
-                return
-            except TimeoutError:
-                pass
-            preview = self._text[:_LIMIT].strip()
-            if preview and preview != shown:
-                await self._show(preview)
-                shown = preview
-
-    async def _show(self, text):
-        if self._message is None:
-            channel = await self._transport._channel(self._channel_id)
-            self._message = await channel.send(text)
-            return
-        await self._message.edit(content=text)
-
-    async def close(self, final):
-        if self._task is None:
-            return False
-        self._closed.set()
-        await self._task
-        if self._message is None:
-            return False
-        if final and len(final) <= _LIMIT:
-            await self._message.edit(content=final)
-            return True
-        # Too long for one message, or the turn died: the normal send path takes
-        # over, so the preview must not linger as a second copy.
-        await self._message.delete()
-        return False
-
-
 def _blockquote(text):
     return "\n".join(f"> {line}" for line in text.splitlines())
 
@@ -371,9 +318,6 @@ class DiscordDM(Transport):
 
     async def send(self, channel_id, text):
         await self._write(await self._channel(channel_id), text)
-
-    def live(self, channel_id):
-        return _Live(self, channel_id)
 
     async def ask(self, channel_id, question, options, multi_select):
         channel = await self._channel(channel_id)

@@ -14,9 +14,7 @@ def _fail_on_early_stop(data):
         raise RuntimeError(f"the model refused to answer: {data.get('stop_details') or 'no reason given'}")
 
 
-async def run(
-    session, user_text, registry, notify, images=None, nudges=None, persist=None, live=None
-):
+async def run(session, user_text, registry, notify, images=None, nudges=None, persist=None):
     if user_text is None:
         session.seal_dangling_tools()
     else:
@@ -37,42 +35,28 @@ async def run(
         # the whole turn back to its last completed one.
         if persist:
             await persist()
-        preview = live() if live else None
-        try:
-            data = await llm.complete(
-                session.system(),
-                session.messages,
-                registry.schemas(),
-                on_text=preview.feed if preview else None,
-            )
-            _fail_on_early_stop(data)
-        except BaseException:
-            if preview:
-                await preview.close(None)
-            raise
+        data = await llm.complete(session.system(), session.messages, registry.schemas())
+        _fail_on_early_stop(data)
         session.record_usage(data.get("usage", {}))
 
         content = data["content"]
         session.append_assistant(content)
         said = llm.text_of(content)
-        # True when the streamed preview already shows the owner `said`; None is
-        # returned for the final reply then, so the caller doesn't send it twice.
-        shown = await preview.close(said) if preview else False
 
         if data.get("stop_reason") != "tool_use":
             text, imgs = await take_nudges()
             if not (text or imgs):
-                return None if shown else said
+                return said
             # The owner spoke while the model was finishing; deliver that reply and
             # keep going instead of ending the turn.
-            if said and not shown:
+            if said:
                 await notify(said)
             session.append_nudge(text, imgs)
             continue
 
         # Text the model wrote alongside its tool calls; only the final turn's text
         # is returned to the caller, so deliver this now or the owner never sees it.
-        if said and not shown:
+        if said:
             await notify(said)
 
         calls = [block for block in content if block.get("type") == "tool_use"]

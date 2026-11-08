@@ -61,14 +61,6 @@ def _last_outcome(state):
     return state.outcome.result()
 
 
-async def _close_retried(state):
-    # A streamed response holds its connection open until closed; one we are about
-    # to retry past would otherwise leak it.
-    outcome = state.outcome
-    if outcome is not None and not outcome.failed:
-        await outcome.result().aclose()
-
-
 def _retryable(exc):
     # A read timeout stacks: four of them is four full timeouts on one turn.
     if isinstance(exc, httpx.ReadTimeout | httpx.WriteTimeout):
@@ -77,17 +69,12 @@ def _retryable(exc):
 
 
 async def request(
-    method, url, headers=None, json=None, data=None, timeout=None, retry=True, stream=False
+    method, url, headers=None, json=None, data=None, timeout=None, retry=True
 ) -> httpx.Response:
     async def attempt():
-        if not stream:
-            return await client().request(
-                method, url, headers=headers, json=json, data=data, timeout=timeout
-            )
-        built = client().build_request(
+        return await client().request(
             method, url, headers=headers, json=json, data=data, timeout=timeout
         )
-        return await client().send(built, stream=True)
 
     retrying = AsyncRetrying(
         stop=stop_after_attempt(4 if retry else 1),
@@ -97,6 +84,5 @@ async def request(
             | retry_if_result(lambda resp: resp.status_code in _RETRY_STATUS)
         ),
         retry_error_callback=_last_outcome,
-        before_sleep=_close_retried if stream else None,
     )
     return await retrying(attempt)

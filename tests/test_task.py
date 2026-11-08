@@ -25,7 +25,7 @@ def _reply(blocks, stop_reason):
 def test_a_waited_task_answers_from_a_fresh_session(monkeypatch):
     seen = []
 
-    async def complete(system, messages, schemas, on_text=None):
+    async def complete(system, messages, schemas):
         seen.append(list(messages))
         return _reply([{"type": "text", "text": "42"}], "end_turn")
 
@@ -38,7 +38,7 @@ def test_a_waited_task_answers_from_a_fresh_session(monkeypatch):
 
 
 def test_a_reload_inside_a_task_comes_back_as_an_error(monkeypatch):
-    async def complete(system, messages, schemas, on_text=None):
+    async def complete(system, messages, schemas):
         return _reply([{"type": "tool_use", "id": "r", "name": "reload", "input": {}}], "tool_use")
 
     def restart():
