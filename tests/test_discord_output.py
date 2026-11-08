@@ -3,7 +3,7 @@ import os
 
 from kiri import config
 from kiri.tools import send_file
-from kiri.transports.discorddm import _files, _split
+from kiri.transports.discorddm import _files, _images, _split
 
 
 def test_a_short_reply_is_one_message():
@@ -32,10 +32,14 @@ def test_a_line_longer_than_a_message_is_hard_cut():
 
 
 class _Attachment:
-    def __init__(self, filename, content_type, body=b"data"):
+    def __init__(self, filename, content_type, body=b"data", size=None):
         self.filename = filename
         self.content_type = content_type
         self.body = body
+        self.size = len(body) if size is None else size
+
+    async def read(self):
+        return self.body
 
     async def save(self, path):
         with open(path, "wb") as f:
@@ -57,6 +61,19 @@ def test_non_image_attachments_are_saved_to_the_inbox():
     assert paths == [os.path.join(config.INBOX_DIR, "77", "report.pdf")]
     with open(paths[0], "rb") as f:
         assert f.read() == b"data"
+
+
+def test_an_image_the_model_cannot_view_is_saved_as_a_file_not_inlined():
+    heic = _Attachment("IMG_1.heic", "image/heic")
+    huge = _Attachment("scan.png", "image/png", size=9_000_000)
+    small = _Attachment("chart.png", "image/png")
+    message = _Message([heic, huge, small])
+
+    paths = asyncio.run(_files(message, None))
+    images = asyncio.run(_images(message))
+
+    assert paths == [os.path.join(config.INBOX_DIR, "77", "IMG_1.heic"), os.path.join(config.INBOX_DIR, "77", "scan.png")]
+    assert images == [("image/png", b"data")]
 
 
 class _Transport:

@@ -10,16 +10,17 @@ To do this, Kiri does not provide any integrations. Its primary tool is the shel
 - **Scheduling** Recurring and one-time jobs, and watches, in your `timezone`. A watch is "tell me when X": Kiri writes X as a shell check that runs on an interval with no model call, and she is woken once, when it passes. A watch that breaks or runs out tells you so. A job that fires late (Kiri was down) says so. What a job sends you is folded into the conversation, so you can reply to it.
 - **Events** Drop a `.md` file in `~/.kiri/events` and Kiri runs it once, like a job firing now. Write it elsewhere and `mv` it in, or a half-written file gets read.
 - **Tasks** Kiri hands work to sub-agents with `task`: waited ones run side by side and answer back into the turn, background ones message you when done. Send `/bg <prompt>` to start one yourself.
-- **Files** Attach any file in the DM and it lands in `~/.kiri/inbox/<message-id>/` for the shell. Kiri sends files back with `send_file`.
+- **Files** Attach any file in the DM and it lands in `~/.kiri/inbox/<message-id>/` for the shell. Images Kiri can view (JPEG, PNG, GIF, WebP, up to 10 MB encoded) go straight to the model; any other image, such as a HEIC photo, lands in the inbox like any other file. Kiri sends files back with `send_file`.
 - **Voice messages**, transcribed on-device with faster-whisper: Install with `uv sync --extra stt`.
 - **Memory** Kiri conversations are rolling, similar to one long Claude Code session. Messages from the past are automatically summarized, and Kiri can read the originals back with `history`. Send `/new` to start a fresh conversation. Long-term memory is separate: plain files in `~/.kiri/memory` that Kiri writes and reads itself — greppable, editable, no schema.
-- **Followups** While Kiri is working on a task, any messages you send will trigger a follow up - not interrupt her. To stop Kiri just say `stop`. If a turn errors or Kiri dies mid-turn, send `/retry` to pick up from the last checkpoint.
+- **Followups** While Kiri is working on a task, any messages you send will trigger a follow up - not interrupt her. Editing a message counts as one too. Commands stay commands mid-turn: `/bg` starts right away, and `/new`, `/retry`, or a skill waits its turn. To stop Kiri just say `stop` (or `/stop`); with nothing else running, it ends her background runs instead. If a turn errors or Kiri dies mid-turn, send `/retry` to pick up from the last checkpoint.
+- **Slash commands** On Discord, `/stop`, `/new`, `/retry`, `/bg`, and `/skill` (pick the skill by name) appear in the `/` picker of Kiri's DM. Typed as plain text, the first four work the same, and a skill is `/<name>`.
 - **Streaming** On Discord, replies stream into one message that is edited as the model writes.
 - **Latency** `kiri usage` shows p50/p95 for every model call (and time to first token), tool, turn, and transcription over the last 7 days.
 - **Questions** When a call is yours to make, Kiri asks mid-task instead of guessing, and writes the likely answers out for you so you tap rather than type. Something else is always an option. Each transport renders it natively — a Discord picker, or a numbered list in the terminal.
 - **Model portability** Use any Anthropic, OpenRouter, or any OpenAI-compatible endpoint.
 - **MCP** Drop a standard server config at `~/.kiri/mcp.json`
-  (`mcp.example.json` shows the shape).
+  (`mcp.example.json` shows the shape). A server that fails to start is skipped, and Kiri DMs you why.
 - **Skills** Procedures Kiri reads before doing the thing they cover, so she isn't rediscovering your CLI's flags — or repeating the mistake that cost you an evening — every session. A few ship with Kiri; write your own as one `<name>/SKILL.md` in `~/.kiri/skills`. Only the one-line description stays in context; the body is read on demand. Invoke one yourself with `/<name>`.
 - **Plugins** When no MCP server exists that you'd trust, write the tool yourself: a module in `src/kiri/tools/`. OAuth is shared plumbing (`kiri auth login <plugin>`), not something each plugin reinvents.
 

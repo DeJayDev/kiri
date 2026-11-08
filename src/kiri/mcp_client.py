@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -10,6 +11,7 @@ from mcp.types import ImageContent
 
 from kiri.auth import credentials
 from kiri.auth import mcp as mcp_auth
+from kiri.engine.providers.base import viewable
 from kiri.tools.shell import _cap
 
 # Providers cap tool names at 64 chars, and one over-long name rejects the whole
@@ -31,6 +33,9 @@ def _flatten(result):
     texts, images = [], []
     for item in result.content:
         if isinstance(item, ImageContent):
+            if not viewable(item.mimeType, len(item.data) * 3 // 4):
+                texts.append(f"[a {item.mimeType} image was left out: not a type or size you can view]")
+                continue
             source = {"type": "base64", "media_type": item.mimeType, "data": item.data}
             images.append({"type": "image", "source": source})
             continue
@@ -70,10 +75,9 @@ async def _connect(name, spec, stack):
         return read, write
 
     # A remote server with no stored token needs a browser, which boot can't do.
-    # Skip it and say so rather than hanging the bot on a login it can't perform.
+    # Fail it rather than hang the bot on a login it can't perform.
     if not credentials.get(mcp_auth.key(name)):
-        print(f"mcp: {name} is not authorized -- run `kiri mcp {name}`")
-        return None
+        raise RuntimeError(f"not authorized, run `kiri mcp {name}`")
 
     auth = mcp_auth.runtime_provider(name, spec["url"])
     client = create_mcp_http_client(auth=auth)
@@ -83,26 +87,41 @@ async def _connect(name, spec, stack):
     return read, write
 
 
+def _reason(exc):
+    # anyio wraps a server's real error in an ExceptionGroup whose own message says nothing.
+    if isinstance(exc, BaseExceptionGroup):
+        return "; ".join(_reason(inner) for inner in exc.exceptions)
+    return f"{type(exc).__name__}: {exc}"
+
+
 async def load(config_path, stack):
-    # Returns a shared list of (schema, runner). Sessions stay open for the
-    # process lifetime via the caller's AsyncExitStack.
+    # Returns a shared list of (schema, runner), and (server, reason) for each server
+    # that failed to start. Sessions stay open for the process lifetime via the
+    # caller's AsyncExitStack.
     if not os.path.exists(config_path):
-        return []
+        return [], []
 
     with open(config_path) as f:
         servers = json.load(f).get("servers", {})
 
     tools = []
+    failed = []
     taken = {}
     for name, spec in servers.items():
-        streams = await _connect(name, spec, stack)
-        if streams is None:
+        # One server that can't start must not keep Kiri from booting: it is reported
+        # to the owner instead, and its tools are absent until a reload.
+        try:
+            async with AsyncExitStack() as server:
+                read, write = await _connect(name, spec, server)
+                session = await server.enter_async_context(ClientSession(read, write))
+                await session.initialize()
+                listed = await session.list_tools()
+                started = server.pop_all()
+        except Exception as exc:
+            failed.append((name, _reason(exc)))
             continue
+        await stack.enter_async_context(started)
 
-        read, write = streams
-        session = await stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
-        listed = await session.list_tools()
         for tool in listed.tools:
             qualified = _qualify(name, tool.name)
             clash = taken.get(qualified)
@@ -119,4 +138,4 @@ async def load(config_path, stack):
                 "input_schema": tool.inputSchema,
             }
             tools.append((schema, _runner(session, tool.name)))
-    return tools
+    return tools, failed

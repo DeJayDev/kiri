@@ -36,6 +36,7 @@ class _Dispatcher:
         self.transport = _Transport()
         self.sessions = _Sessions()
         self.reauths = []
+        self.background = {}
 
     async def reauth(self, channel_id, provider):
         self.reauths.append((channel_id, provider.name))
@@ -189,3 +190,41 @@ def test_boot_tells_the_owner_which_runs_were_cut_off():
     [note] = dispatcher.sessions.session.notes
     assert "long research" in note
     assert list(db.Run.select()) == []
+
+
+def test_boot_tells_the_owner_which_mcp_servers_failed():
+    dispatcher = _Dispatcher()
+
+    async def ready():
+        pass
+
+    async def owner_channel():
+        return 5
+
+    dispatcher.transport.ready = ready
+    dispatcher.transport.owner_channel = owner_channel
+
+    asyncio.run(app.report_failed_mcp([("linear", "RuntimeError: not authorized")], dispatcher))
+
+    [(channel, text)] = dispatcher.transport.sent
+    assert channel == 5 and text.endswith("- linear: RuntimeError: not authorized")
+    [note] = dispatcher.sessions.session.notes
+    assert "linear" in note
+
+
+def test_a_detached_run_is_reachable_by_stop_only_while_it_runs(monkeypatch):
+    dispatcher = _Dispatcher()
+    seen = []
+
+    async def fake_run_turn(session, text, store, mcp_tools, transport):
+        seen.extend(run.instruction for run in dispatcher.background.values())
+        return "ok"
+
+    monkeypatch.setattr(app.conversation, "run_turn", fake_run_turn)
+
+    async def go():
+        await asyncio.create_task(app.run_detached(5, "tick", "base", None, [], dispatcher))
+
+    asyncio.run(go())
+    assert seen == ["tick"]
+    assert dispatcher.background == {}

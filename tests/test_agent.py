@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from kiri.engine import agent
 from kiri.engine.context import Session
 from kiri.tools.reload import Restart
@@ -318,3 +320,52 @@ def test_reload_in_a_batch_still_answers_every_call(monkeypatch):
         pass
     results = session.messages[-1]["content"]
     assert [r["tool_use_id"] for r in results] == ["t1", "t2"]
+
+
+def test_a_reply_cut_off_at_the_output_limit_fails_loud(monkeypatch):
+    session = Session(1, "base")
+    preview = _Preview(shows=False)
+
+    async def complete(system, messages, schemas, on_text=None):
+        return _reply([{"type": "text", "text": "Here are the first half of"}], "max_tokens")
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        asyncio.run(agent.run(session, "write it all", _Registry(), _noop, live=lambda: preview))
+    assert preview.closed == [None]
+    assert session.messages[-1]["role"] == "user"
+
+
+def test_a_refusal_fails_loud_with_its_details(monkeypatch):
+    session = Session(1, "base")
+
+    async def complete(system, messages, schemas, on_text=None):
+        return {**_reply([], "refusal"), "stop_details": {"type": "refusal", "category": "cyber"}}
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    with pytest.raises(RuntimeError, match="refused to answer: .*cyber"):
+        asyncio.run(agent.run(session, "hi", _Registry(), _noop))
+
+
+def test_tool_calls_are_on_the_session_only_while_they_run(monkeypatch):
+    session = Session(1, "base")
+    seen = []
+    replies = iter([
+        _reply([{"type": "tool_use", "id": "a", "name": "shell", "input": {"command": "ls"}}], "tool_use"),
+        _reply([{"type": "text", "text": "done"}], "end_turn"),
+    ])
+
+    async def complete(system, messages, schemas, on_text=None):
+        return next(replies)
+
+    def shell():
+        seen.append([call["name"] for call in session.running])
+        return "ok"
+
+    monkeypatch.setattr(agent.llm, "complete", complete)
+
+    asyncio.run(agent.run(session, "go", _Registry({"shell": shell}), _noop))
+    assert seen == [["shell"]]
+    assert session.running == []

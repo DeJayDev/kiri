@@ -99,6 +99,7 @@ class _Dispatcher:
         self.transport = _Transport()
         self.session = Session(5, "base")
         self.sessions = self
+        self.background = {}
 
     def get(self, channel_id):
         return self.session

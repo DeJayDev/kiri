@@ -15,7 +15,7 @@ from kiri.skills import catalog
 from kiri.tools import shell
 from kiri.tools.reload import Restart
 from kiri.transports import registry as transports
-from kiri.turns import Dispatcher
+from kiri.turns import COMMANDS, Dispatcher
 
 
 async def start():
@@ -26,7 +26,8 @@ async def start():
     summarizer = providers.build(config.SUMMARY_PROVIDER) if config.SUMMARY_PROVIDER else chat
     llm.use(chat, summarizer, sink=usage.record, timer=spans.record)
 
-    base_prompt = "\n\n".join(filter(None, [prompt.load(), catalog.index()]))
+    transport = transports.build(config.TRANSPORT)
+    base_prompt = "\n\n".join(filter(None, [prompt.load(), transport.style, catalog.index()]))
     sessions = SessionStore(base_prompt)
     store = JobStore()
     # Read before the scheduler starts, or this boot's own runs get reported as cut off.
@@ -34,9 +35,8 @@ async def start():
 
     async with AsyncExitStack() as stack:
         stack.push_async_callback(http.aclose)
-        mcp_tools = await mcp_client.load(config.MCP_CONFIG, stack)
+        mcp_tools, mcp_failed = await mcp_client.load(config.MCP_CONFIG, stack)
 
-        transport = transports.build(config.TRANSPORT)
         dispatcher = Dispatcher(transport, sessions, store, mcp_tools)
 
         async def execute(job):
@@ -83,7 +83,7 @@ async def start():
             if reply:
                 await transport.send(channel, reply)
 
-        serve = asyncio.create_task(transport.run(dispatcher.on_message))
+        serve = asyncio.create_task(transport.run(dispatcher.on_message, COMMANDS))
 
         def graceful_stop():
             # systemd sends SIGTERM on stop/restart (SIGKILL only after the 90s
@@ -102,6 +102,7 @@ async def start():
         scheduler = asyncio.create_task(supervised_scheduler())
         resuming = asyncio.create_task(resume_pending())
         reporting = asyncio.create_task(report_cut_runs(cut, dispatcher))
+        reporting_mcp = asyncio.create_task(report_failed_mcp(mcp_failed, dispatcher))
         try:
             await serve
         except asyncio.CancelledError:
@@ -111,6 +112,16 @@ async def start():
             scheduler.cancel()
             resuming.cancel()
             reporting.cancel()
+            reporting_mcp.cancel()
+
+
+async def report_failed_mcp(failed, dispatcher):
+    if not failed:
+        return
+    await dispatcher.transport.ready()
+    channel = await dispatcher.transport.owner_channel()
+    listed = "\n".join(f"- {name}: {reason}" for name, reason in failed)
+    await _tell(dispatcher, channel, f"These MCP servers failed to start, so their tools are missing until a reload:\n{listed}")
 
 
 async def report_cut_runs(runs, dispatcher):
@@ -179,6 +190,11 @@ async def run_detached(channel, instruction, base_prompt, store, mcp_tools, disp
     transport = dispatcher.transport
     session = None
     run = db.Run.create(channel_id=channel, instruction=instruction)
+    # Registered so the owner's `stop` can reach it; every caller runs this in a task
+    # of its own, so the task is the run.
+    task = asyncio.current_task()
+    dispatcher.background[task] = run
+    task.add_done_callback(lambda done: dispatcher.background.pop(done, None))
 
     async def turn():
         nonlocal session

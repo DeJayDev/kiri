@@ -35,7 +35,7 @@ def test_storage_roundtrips_tokens_and_dynamic_client_registration():
     assert set(credentials.get("mcp:linear")) == {"tokens", "client_info"}
 
 
-def test_an_unauthorized_remote_server_is_skipped_not_fatal(monkeypatch, tmp_path, capsys):
+def test_an_unauthorized_remote_server_is_reported_not_fatal(monkeypatch, tmp_path):
     path = tmp_path / "mcp.json"
     path.write_text(json.dumps({"servers": {"linear": {"url": "https://mcp.linear.app/mcp"}}}))
 
@@ -43,5 +43,4 @@ def test_an_unauthorized_remote_server_is_skipped_not_fatal(monkeypatch, tmp_pat
         async with AsyncExitStack() as stack:
             return await mcp_client.load(str(path), stack)
 
-    assert asyncio.run(go()) == []
-    assert "kiri mcp linear" in capsys.readouterr().out
+    assert asyncio.run(go()) == ([], [("linear", "RuntimeError: not authorized, run `kiri mcp linear`")])

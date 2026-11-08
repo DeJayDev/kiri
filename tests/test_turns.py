@@ -1,10 +1,13 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 import pytest
 
-from kiri import turns
+from kiri import config, db, turns
+from kiri.engine.context import Session
 from kiri.engine.providers.base import AuthRequired
+from kiri.scheduling import events
 from kiri.tools.reload import Restart
 from kiri.transports.base import Inbound
 
@@ -27,6 +30,7 @@ class _Sessions:
     def __init__(self):
         self.saved = []
         self.dropped = []
+        self.notes = []
 
     def get(self, channel_id):
         return f"session-{channel_id}"
@@ -36,6 +40,9 @@ class _Sessions:
 
     def drop(self, channel_id):
         self.dropped.append(channel_id)
+
+    def note(self, channel_id, text):
+        self.notes.append(text)
 
 
 @pytest.fixture
@@ -79,7 +86,7 @@ def test_a_slow_turn_says_it_is_still_alive(rig, monkeypatch):
 
     monkeypatch.setattr(asyncio, "sleep", instant)
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(dispatcher._slow_note(1))
+        asyncio.run(dispatcher._slow_note(1, Session(1, "base")))
 
     assert slept[:2] == [60, 300]
     assert transport.sent == ["still working (1m).", "still working (6m)."]
@@ -211,6 +218,121 @@ def test_stop_clears_the_queue_and_cancels_the_running_turn(rig, monkeypatch):
 def test_stop_with_nothing_running_says_so(rig):
     asyncio.run(_stop(rig[0]))
     assert rig[1].sent == ["nothing running."]
+
+
+def test_slash_stop_stops_the_running_turn_like_stop(rig, monkeypatch):
+    dispatcher, transport, _ = rig
+    started = asyncio.Event()
+
+    async def turn(session, text, images=None):
+        started.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(dispatcher, "_turn", turn)
+
+    async def go():
+        task = await dispatcher.on_message(_msg("long one"))
+        await started.wait()
+        await dispatcher.on_message(_msg("/stop"))
+        await task
+
+    asyncio.run(go())
+    assert transport.sent == ["stopped."]
+
+
+def test_stop_with_only_background_runs_cancels_them_and_notes_it(rig):
+    dispatcher, transport, sessions = rig
+
+    async def go():
+        job = asyncio.create_task(asyncio.sleep(3600))
+        dispatcher.background[job] = db.Run.create(channel_id=1, instruction="crawl every changelog")
+        await _stop(dispatcher)
+        with pytest.raises(asyncio.CancelledError):
+            await job
+
+    asyncio.run(go())
+    assert transport.sent == ["stopped in the background:\n- crawl every changelog"]
+    assert dispatcher.background == {}
+    assert list(db.Run.select()) == []
+    assert sessions.notes == ["The owner stopped this background run before it finished:\n\ncrawl every changelog"]
+
+
+def test_stop_mid_turn_leaves_background_runs_and_says_how_to_end_them(rig, monkeypatch):
+    dispatcher, transport, _ = rig
+    started = asyncio.Event()
+
+    async def turn(session, text, images=None):
+        started.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(dispatcher, "_turn", turn)
+
+    async def go():
+        job = asyncio.create_task(asyncio.sleep(3600))
+        dispatcher.background[job] = db.Run.create(channel_id=1, instruction="crawl")
+        task = await dispatcher.on_message(_msg("long one"))
+        await started.wait()
+        await _stop(dispatcher)
+        await task
+        assert not job.cancelled()
+        job.cancel()
+
+    asyncio.run(go())
+    assert transport.sent == ["stopped. Background runs are still going; send stop again to end them."]
+
+
+def test_bg_sent_mid_turn_starts_now_instead_of_folding_into_the_turn(rig, monkeypatch):
+    dispatcher, transport, _ = rig
+    os.makedirs(config.EVENTS_DIR)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def turn(session, text, images=None):
+        started.set()
+        await release.wait()
+        return "done"
+
+    monkeypatch.setattr(dispatcher, "_turn", turn)
+
+    async def go():
+        task = await dispatcher.on_message(_msg("long one"))
+        await started.wait()
+        await dispatcher.on_message(_msg("/bg summarize the downloads folder"))
+        assert dispatcher.pending[1] == []
+        release.set()
+        await task
+
+    asyncio.run(go())
+    assert transport.sent == ["started in the background.", "done"]
+    [(_, body)] = events.take()
+    assert body == "summarize the downloads folder"
+
+
+def test_a_command_sent_mid_turn_keeps_its_place_and_is_not_folded_in(rig):
+    dispatcher, _, _ = rig
+    dispatcher.pending[1] = [_msg("also check logs"), _msg("/new"), _msg("hello again")]
+
+    text, _ = asyncio.run(dispatcher._drain_nudges(1))
+
+    assert text == "also check logs"
+    assert [inbound.text for inbound in dispatcher.pending[1]] == ["/new", "hello again"]
+
+
+def test_the_heartbeat_names_the_tool_call_in_flight(rig, monkeypatch):
+    dispatcher, transport, _ = rig
+    session = Session(1, "base")
+    session.running = [{"name": "shell", "input": {"command": "rsync -a ~/photos\n  /mnt/backup", "timeout": 900}}]
+    slept = []
+
+    async def instant(delay):
+        slept.append(delay)
+        if len(slept) > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", instant)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(dispatcher._slow_note(1, session))
+
+    assert transport.sent == ["still working (1m), running shell `rsync -a ~/photos /mnt/backup`."]
 
 
 def test_shutdown_cancellation_is_not_swallowed(rig, monkeypatch):

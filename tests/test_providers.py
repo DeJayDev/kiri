@@ -387,3 +387,65 @@ def test_to_messages_moves_a_tool_image_into_the_following_user_message():
     assert out[2] == {"role": "tool", "tool_call_id": "c1", "content": "captured"}
     assert out[3]["role"] == "user"
     assert out[3]["content"][0]["image_url"]["url"] == "data:image/png;base64,AAA"
+
+
+def test_anthropic_stream_drops_thinking_blocks(monkeypatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    response = _StreamResponse(_sse(
+        {"type": "message_start", "message": {"content": [], "usage": {}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "hmm"}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "content_block_stop", "index": 1},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}},
+    ))
+    _serve(monkeypatch, response)
+
+    data = asyncio.run(anthropic.Anthropic().complete("SYS", [{"role": "user", "content": "hi"}], None, on_text=lambda d: None))
+
+    assert data["content"] == [{"type": "text", "text": "hi"}]
+
+
+def test_anthropic_drops_thinking_blocks_from_a_plain_response(monkeypatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+
+    class _Response:
+        status_code = 200
+
+        def json(self):
+            return {
+                "content": [
+                    {"type": "redacted_thinking", "data": "x"},
+                    {"type": "tool_use", "id": "t1", "name": "shell", "input": {}},
+                ],
+                "stop_reason": "tool_use",
+                "usage": {},
+            }
+
+    _serve(monkeypatch, _Response())
+
+    data = asyncio.run(anthropic.Anthropic().complete("SYS", [{"role": "user", "content": "hi"}], None))
+
+    assert data["content"] == [{"type": "tool_use", "id": "t1", "name": "shell", "input": {}}]
+
+
+def test_openai_length_and_content_filter_become_early_stops():
+    assert openai.OpenAI().from_response(_tool_call_response("length"))["stop_reason"] == "max_tokens"
+    assert openai.OpenAI().from_response(_tool_call_response("content_filter"))["stop_reason"] == "refusal"
+
+
+def test_openai_stream_keeps_its_finish_reason(monkeypatch):
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "k")
+    monkeypatch.setattr(config, "MODEL", "gpt-x")
+    response = _StreamResponse(_sse(
+        {"model": "gpt-x", "choices": [{"delta": {"content": "the first half"}}]},
+        {"model": "gpt-x", "choices": [{"delta": {}, "finish_reason": "length"}]},
+    ) + ["data: [DONE]"])
+    _serve(monkeypatch, response)
+
+    data = asyncio.run(openai.OpenAI().complete("SYS", [{"role": "user", "content": "hi"}], None, on_text=lambda d: None))
+
+    assert data["stop_reason"] == "max_tokens"

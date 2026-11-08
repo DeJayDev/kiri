@@ -80,6 +80,10 @@ def names():
     return sorted(_paths())
 
 
+def descriptions():
+    return {name: _frontmatter(path).get("description", "") for name, path in sorted(_paths().items())}
+
+
 def index():
     # Read once at boot and folded into the base prompt: this rides in the cache
     # prefix, so it must not change between requests. `reload` re-execs, which is

@@ -4,8 +4,11 @@ import os
 from contextlib import asynccontextmanager
 
 import discord
+from discord import app_commands
 
 from kiri import config
+from kiri.engine.providers.base import viewable
+from kiri.skills import catalog
 from kiri.transports.base import Inbound, Transport
 
 _LIMIT = 2000
@@ -22,20 +25,25 @@ def _voice_attachment(message):
     return message.attachments[0]
 
 
+def _inline(attachment):
+    return viewable(attachment.content_type or "", attachment.size)
+
+
 async def _images(message):
     out = []
     for attachment in message.attachments:
-        if (attachment.content_type or "").startswith("image/"):
+        if _inline(attachment):
             out.append((attachment.content_type, await attachment.read()))
     return out
 
 
 async def _files(message, voice):
-    # Everything that isn't an image or the voice note, saved where the shell can
-    # read it. Discord turns a long paste into message.txt, which lands here too.
+    # Everything that isn't the voice note or an image the model can view inline,
+    # saved where the shell can read it. Discord turns a long paste into
+    # message.txt, which lands here too.
     out = []
     for attachment in message.attachments:
-        if attachment is voice or (attachment.content_type or "").startswith("image/"):
+        if attachment is voice or _inline(attachment):
             continue
         folder = os.path.join(config.INBOX_DIR, str(message.id))
         os.makedirs(folder, exist_ok=True)
@@ -214,17 +222,76 @@ class _Live:
         return False
 
 
+def _blockquote(text):
+    return "\n".join(f"> {line}" for line in text.splitlines())
+
+
+async def _skill_names(interaction, current):
+    # Discord shows at most 25 suggestions and cuts a label at 100 characters.
+    return [
+        app_commands.Choice(name=f"{name}: {text}"[:100], value=name)
+        for name, text in catalog.descriptions().items()
+        if current.lower() in name
+    ][:25]
+
+
+def _slash(transport, command, description, argument):
+    async def invoke(interaction, text):
+        if interaction.user.id != config.OWNER_ID:
+            return
+        # Discord shows "the application did not respond" unless the interaction is
+        # answered within 3 seconds, so answer first and run after.
+        await interaction.response.send_message(text[:_LIMIT])
+        await transport._on_message(Inbound(channel_id=interaction.channel_id, text=text))
+
+    async def bare(interaction: discord.Interaction):
+        await invoke(interaction, f"/{command}")
+
+    async def prompt(interaction: discord.Interaction, prompt: str):
+        await invoke(interaction, f"/{command} {prompt}")
+
+    async def skill(interaction: discord.Interaction, name: str, message: str = ""):
+        await invoke(interaction, f"/{name} {message}".strip())
+
+    built = app_commands.Command(
+        name=command,
+        description=description,
+        callback={None: bare, "prompt": prompt, "skill": skill}[argument],
+        allowed_contexts=app_commands.AppCommandContext(dm_channel=True),
+    )
+    if argument == "skill":
+        built.autocomplete("name")(_skill_names)
+    return built
+
+
 class _Client(discord.Client):
     def __init__(self, transport):
         super().__init__(intents=_intents)
         self.transport = transport
+        self.tree = app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        for command, description, argument in self.transport._commands:
+            self.tree.add_command(_slash(self.transport, command, description, argument))
+        await self.tree.sync()
+
+    def _from_owner(self, message):
+        return isinstance(message.channel, discord.DMChannel) and message.author.id == config.OWNER_ID
+
+    async def on_message_edit(self, before, after):
+        # Discord also fires this when it attaches a link preview, with the text unchanged.
+        if before.content == after.content or not self._from_owner(after):
+            return
+        await self.transport._on_message(
+            Inbound(
+                channel_id=after.channel.id,
+                text=after.content.strip(),
+                quote=f"This edits my earlier message, which read:\n{_blockquote(before.content)}",
+            )
+        )
 
     async def on_message(self, message):
-        if message.author == self.user:
-            return
-        if not isinstance(message.channel, discord.DMChannel):
-            return
-        if message.author.id != config.OWNER_ID:
+        if not self._from_owner(message):
             return
 
         voice = _voice_attachment(message)
@@ -254,7 +321,7 @@ class _Client(discord.Client):
                 body.append((await attachment.read()).decode("utf-8", "replace"))
             else:
                 body.append(f"[attachment: {attachment.filename}]")
-        lines = "\n".join(f"> {line}" for line in "\n".join(body).splitlines())
+        lines = _blockquote("\n".join(body))
 
         if quoted.author == self.user:
             return f"In reply to your message:\n{lines}"
@@ -263,10 +330,15 @@ class _Client(discord.Client):
 
 class DiscordDM(Transport):
     name = "discord"
+    style = (
+        "You are talking over a Discord DM. Discord renders a subset of markdown with no "
+        "tables, so lay out tabular data as a list or a code block."
+    )
 
     def __init__(self):
         self._client = _Client(self)
         self._on_message = None
+        self._commands = []
 
     @classmethod
     def missing(cls):
@@ -277,8 +349,9 @@ class DiscordDM(Transport):
             gaps.append("discord owner_id")
         return ", ".join(gaps) or None
 
-    async def run(self, on_message):
+    async def run(self, on_message, commands):
         self._on_message = on_message
+        self._commands = commands
         await self._client.start(config.DISCORD_BOT_TOKEN)
 
     async def ready(self):

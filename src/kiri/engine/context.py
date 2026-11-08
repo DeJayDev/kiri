@@ -35,6 +35,8 @@ class Session:
         # Messages compaction cut, waiting for the store to archive them on save.
         self.archived = []
         self.last_input_tokens = 0
+        # Tool calls in flight, for the owner's heartbeat. Never persisted.
+        self.running = []
 
     def system(self):
         # Ordered segments, stable first. A caching provider breakpoints the last
@@ -88,6 +90,9 @@ class Session:
 
     def append_tool_results(self, results, text="", images=None):
         self.messages.append({"role": "user", "content": [*results, *self._blocks(text, images)]})
+        # Usage only reports after a request, so a batch of large results would overflow
+        # the window on the very request meant to measure it. Roughly 3 chars per token.
+        self.last_input_tokens += sum(len(_flat(block.get("content", ""))) for block in results) // 3
 
     def _dangling_tool_results(self):
         # A restart can cut a turn between an assistant tool_use and its result; the
@@ -125,6 +130,7 @@ class Session:
 
         cut = self._safe_cut()
         if cut <= 0:
+            self._shrink_tool_results()
             return
 
         # Summarize before dropping the span: if the summary call fails, the turn
@@ -140,6 +146,18 @@ class Session:
         while cut > 0 and not _is_user_turn(self.messages[cut]):
             cut -= 1
         return cut
+
+    def _shrink_tool_results(self):
+        # One long turn has no user turn to cut at, so its older tool output is trimmed
+        # in place instead. The newest results stay whole: the model has not read them.
+        for i, message in enumerate(self.messages[: -config.KEEP_RECENT]):
+            if isinstance(message["content"], str):
+                continue
+            blocks = [
+                {**block, "content": _stub(block.get("content", ""))} if block.get("type") == "tool_result" else block
+                for block in message["content"]
+            ]
+            self.messages[i] = {**message, "content": blocks}
 
     async def _summarize(self, old):
         transcript = render(old)
@@ -180,9 +198,14 @@ def render(messages):
     return "\n".join(lines)
 
 
+def _flat(content):
+    if isinstance(content, str):
+        return content
+    return " ".join(b.get("text", "[image]") for b in content)
+
+
 def _stub(content):
-    if not isinstance(content, str):
-        content = " ".join(b.get("text", "[image]") for b in content)
+    content = _flat(content)
     if len(content) <= 500:
         return content
     return f"{content[:500]} [... {len(content) - 500} more chars]"

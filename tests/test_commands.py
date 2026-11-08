@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 
 from kiri import config, resume, turns
+from kiri.engine.context import Session
 from kiri.engine.sessions import SessionStore
 from kiri.scheduling import events
 from kiri.tools import ask
@@ -115,7 +116,7 @@ def test_the_heartbeat_names_a_pending_question_instead_of_working(monkeypatch):
     monkeypatch.setitem(ask.waiting, 1, "ship it?")
 
     try:
-        asyncio.run(dispatcher._slow_note(1))
+        asyncio.run(dispatcher._slow_note(1, Session(1, "base")))
     except asyncio.CancelledError:
         pass
 

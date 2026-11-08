@@ -3,7 +3,9 @@ from types import SimpleNamespace
 
 import discord
 
-from kiri.transports.discorddm import DiscordDM
+from kiri import config
+from kiri.skills import catalog
+from kiri.transports.discorddm import DiscordDM, _skill_names, _slash
 
 BOT = SimpleNamespace(name="kiri")
 OWNER = SimpleNamespace(name="owner")
@@ -80,3 +82,117 @@ def test_a_binary_attachment_is_named_not_read():
 
 def test_a_reply_to_a_deleted_message_says_so():
     assert _quote(_reply_to(None)) == "In reply to a message that has since been deleted."
+
+
+def _dm(channel_id):
+    channel = object.__new__(discord.DMChannel)
+    channel.id = channel_id
+    return channel
+
+
+def _edit(before, after, author_id):
+    author = SimpleNamespace(id=author_id)
+    return (
+        SimpleNamespace(content=before, channel=_dm(9), author=author),
+        SimpleNamespace(content=after, channel=_dm(9), author=author),
+    )
+
+
+def _capture(client):
+    received = []
+
+    async def on_message(inbound):
+        received.append(inbound)
+
+    client.transport._on_message = on_message
+    return received
+
+
+def test_an_edit_reaches_kiri_with_the_old_text_quoted(monkeypatch):
+    monkeypatch.setattr(config, "OWNER_ID", 7)
+    client = _client()
+    received = _capture(client)
+
+    asyncio.run(client.on_message_edit(*_edit("weather in parsi", "weather in paris", 7)))
+
+    [inbound] = received
+    assert (inbound.channel_id, inbound.text) == (9, "weather in paris")
+    assert inbound.quote == "This edits my earlier message, which read:\n> weather in parsi"
+
+
+def test_an_edit_that_only_adds_a_link_preview_is_ignored(monkeypatch):
+    monkeypatch.setattr(config, "OWNER_ID", 7)
+    client = _client()
+    received = _capture(client)
+
+    asyncio.run(client.on_message_edit(*_edit("see https://x.dev", "see https://x.dev", 7)))
+
+    assert received == []
+
+
+def test_kiris_own_edited_messages_are_ignored(monkeypatch):
+    monkeypatch.setattr(config, "OWNER_ID", 7)
+    client = _client()
+    received = _capture(client)
+
+    asyncio.run(client.on_message_edit(*_edit("draft", "final", 99)))
+
+    assert received == []
+
+
+class _Response:
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, text):
+        self.sent.append(text)
+
+
+def _interaction(user_id):
+    return SimpleNamespace(user=SimpleNamespace(id=user_id), channel_id=9, response=_Response())
+
+
+def test_skill_is_one_dm_only_command_that_runs_the_named_skill(monkeypatch):
+    monkeypatch.setattr(config, "OWNER_ID", 7)
+    transport = DiscordDM()
+    received = _capture(transport._client)
+    interaction = _interaction(7)
+
+    command = _slash(transport, "skill", "Run one of your skills by name.", "skill")
+    asyncio.run(command.callback(interaction, name="wttr", message="london"))
+
+    assert command.allowed_contexts.dm_channel is True
+    assert command.allowed_contexts.guild is not True
+    assert [(p.name, p.required, p.autocomplete) for p in command.parameters] == [("name", True, True), ("message", False, False)]
+    assert interaction.response.sent == ["/wttr london"]
+    assert [inbound.text for inbound in received] == ["/wttr london"]
+
+
+def test_skill_names_autocomplete_from_the_catalog(monkeypatch):
+    monkeypatch.setattr(catalog, "descriptions", lambda: {"cheat": "Shell help.", "wttr": "Get weather."})
+
+    choices = asyncio.run(_skill_names(None, "WT"))
+
+    assert [(choice.name, choice.value) for choice in choices] == [("wttr: Get weather.", "wttr")]
+
+
+def test_bg_needs_its_prompt_and_stop_takes_nothing():
+    transport = DiscordDM()
+
+    bg = _slash(transport, "bg", "Run a prompt in the background.", "prompt")
+    stop = _slash(transport, "stop", "Stop the running turn.", None)
+
+    assert [(p.name, p.required) for p in bg.parameters] == [("prompt", True)]
+    assert stop.parameters == []
+
+
+def test_a_command_from_anyone_but_the_owner_does_nothing(monkeypatch):
+    monkeypatch.setattr(config, "OWNER_ID", 7)
+    transport = DiscordDM()
+    received = _capture(transport._client)
+    interaction = _interaction(8)
+
+    asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
+
+    assert interaction.response.sent == []
+    assert received == []

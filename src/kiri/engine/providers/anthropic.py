@@ -74,6 +74,9 @@ class Anthropic(Provider):
                 raise ProviderError(self.name, resp.status_code, resp.text)
             data = resp.json()
 
+        # Thinking is never kept. A block sent back after compaction or a trimmed tool
+        # result changed the history before it is a 400, and the checkpoint replays it.
+        data["content"] = [b for b in data["content"] if b["type"] not in {"thinking", "redacted_thinking"}]
         usage = data.get("usage", {})
         data["usage"] = normalize_usage(
             usage.get("input_tokens", 0),
@@ -116,11 +119,7 @@ class Anthropic(Provider):
                     on_text(delta["text"])
                 elif delta["type"] == "input_json_delta":
                     partial_json[index] = partial_json.get(index, "") + delta["partial_json"]
-                elif delta["type"] == "thinking_delta":
-                    block["thinking"] += delta["thinking"]
-                elif delta["type"] == "signature_delta":
-                    block["signature"] = delta["signature"]
-                else:
+                elif delta["type"] not in {"thinking_delta", "signature_delta"}:
                     raise ProviderError(self.name, 200, f"unknown stream delta: {json.dumps(delta)}")
             elif kind == "content_block_stop":
                 index = event["index"]

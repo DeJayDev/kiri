@@ -33,6 +33,14 @@ class DeviceCode:
     expires_at: float
 
 
+def viewable(media_type, size):
+    # Any other image is a 400 for the whole request, and the turn carrying it is already
+    # checkpointed, so every later request would replay the 400. The cap is on the
+    # base64-encoded size.
+    encoded = (size + 2) // 3 * 4
+    return media_type in {"image/jpeg", "image/png", "image/gif", "image/webp"} and encoded <= 10_000_000
+
+
 def normalize_usage(input_tokens, output_tokens, cache_read=0, cache_write=0):
     # "input" means uncached on every provider. The session sizes its context from
     # the sum of all three; folding cached tokens into input breaks compaction.

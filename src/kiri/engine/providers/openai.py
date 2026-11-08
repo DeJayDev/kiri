@@ -133,9 +133,11 @@ class OpenAI(Provider):
         message = choice["message"]
         content = to_content(message)
 
-        # From the content, not finish_reason: llama.cpp, vLLM and some Azure
-        # deployments say "stop" while still returning tool_calls.
-        stop = "tool_use" if any(b["type"] == "tool_use" for b in content) else "end_turn"
+        stop = {"length": "max_tokens", "content_filter": "refusal"}.get(choice.get("finish_reason"))
+        if stop is None:
+            # From the content, not finish_reason: llama.cpp, vLLM and some Azure
+            # deployments say "stop" while still returning tool_calls.
+            stop = "tool_use" if any(b["type"] == "tool_use" for b in content) else "end_turn"
 
         usage = data.get("usage", {})
         # prompt_tokens includes the cached prefix; Anthropic's input_tokens excludes it.
@@ -199,6 +201,7 @@ class OpenAI(Provider):
         # check_model see exactly what they would have without streaming.
         text = ""
         calls = {}
+        finish = None
         data = {"usage": {}}
         async for line in resp.aiter_lines():
             if not line.startswith("data:"):
@@ -214,6 +217,7 @@ class OpenAI(Provider):
             if chunk.get("usage"):
                 data["usage"] = chunk["usage"]
             for choice in chunk.get("choices") or []:
+                finish = choice.get("finish_reason") or finish
                 delta = choice.get("delta") or {}
                 if delta.get("content"):
                     text += delta["content"]
@@ -232,5 +236,5 @@ class OpenAI(Provider):
                         slot["function"]["arguments"] += function["arguments"]
 
         message = {"content": text, "tool_calls": [calls[i] for i in sorted(calls)]}
-        data["choices"] = [{"message": message}]
+        data["choices"] = [{"message": message, "finish_reason": finish}]
         return data

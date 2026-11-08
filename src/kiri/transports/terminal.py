@@ -20,12 +20,13 @@ def _picked(answer, options, multi_select):
 
 class Terminal(Transport):
     name = "terminal"
+    style = "You are talking in a terminal, which shows markdown as raw text, so write plain text."
 
     @classmethod
     def missing(cls):
         return None
 
-    async def run(self, on_message):
+    async def run(self, on_message, commands):
         print("kiri terminal. ctrl-d to quit, 'stop' to cancel a running turn.")
         while True:
             try:

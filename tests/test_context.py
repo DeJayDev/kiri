@@ -137,3 +137,37 @@ def test_compaction_stubs_long_tool_output_and_marks_images():
     assert "user: [image]" in rendered
     assert "[... 1500 more chars]" in rendered
     assert "x" * 501 not in rendered
+
+
+def _long_turn(rounds):
+    messages = [{"role": "user", "content": "do a big job"}]
+    for i in range(rounds):
+        messages.append({"role": "assistant", "content": [{"type": "tool_use", "id": f"t{i}", "name": "shell", "input": {}}]})
+        messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": f"t{i}", "content": "x" * 30000}]})
+    return messages
+
+
+def test_one_long_turn_trims_older_tool_output_and_keeps_the_newest(monkeypatch):
+    monkeypatch.setattr(config, "KEEP_RECENT", 4)
+    monkeypatch.setattr(config, "COMPACT_AT", 0.5)
+    monkeypatch.setattr(config, "MODEL_CONTEXT", 100)
+    session = Session(1, "base")
+    session.messages = _long_turn(5)
+    session.last_input_tokens = 90
+
+    asyncio.run(session.maybe_compact())
+
+    outputs = [m["content"][0]["content"] for m in session.messages if m["role"] == "user" and isinstance(m["content"], list)]
+    assert [len(output) for output in outputs[:3]] == [len("x" * 500 + " [... 29500 more chars]")] * 3
+    assert outputs[3:] == ["x" * 30000] * 2
+    assert len(session.messages) == 11
+    assert session.summary == ""
+
+
+def test_large_tool_results_count_toward_compaction_before_the_next_request():
+    session = Session(1, "base")
+    session.last_input_tokens = 1000
+
+    session.append_tool_results([{"type": "tool_result", "tool_use_id": "a", "content": "x" * 30000}])
+
+    assert session.last_input_tokens == 11000

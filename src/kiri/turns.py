@@ -46,6 +46,32 @@ def _with_files(inbound, text):
     return f"{text}\n\n{listed}".strip()
 
 
+def _is_command(inbound):
+    return bool(_SLASH.match(inbound.text.strip()))
+
+
+def _brief(text):
+    line = " ".join(text.split())
+    return line if len(line) <= 80 else f"{line[:77]}..."
+
+
+def _doing(call):
+    detail = next((value for value in call.get("input", {}).values() if isinstance(value, str)), "")
+    if not detail:
+        return call["name"]
+    return f"{call['name']} `{_brief(detail).replace('`', '')}`"
+
+
+# What a transport with a native command picker offers, as (name, description, argument).
+COMMANDS = [
+    ("stop", "Stop the running turn, or the background runs when nothing else is running.", None),
+    ("new", "Start a fresh conversation.", None),
+    ("retry", "Pick a failed turn back up from its last checkpoint.", None),
+    ("bg", "Run a prompt in the background. It messages you when done.", "prompt"),
+    ("skill", "Run one of your skills by name.", "skill"),
+]
+
+
 class Dispatcher:
     def __init__(self, transport, sessions, store, mcp_tools):
         self.transport = transport
@@ -55,24 +81,20 @@ class Dispatcher:
         self.tasks = {}
         self.pending = {}
         self.stopped = set()
+        # Detached runs in flight (jobs, events, background tasks): task -> its db.Run row.
+        self.background = {}
 
     async def on_message(self, inbound):
         channel = inbound.channel_id
         running = self.tasks.get(channel)
+        command = inbound.text.strip()
 
-        if inbound.text.strip().lower() in {"stop", "cancel"}:
-            if not running or running.done():
-                await self.transport.send(channel, "nothing running.")
-                return None
-
-            # Clear in place: the drain loop holds a reference to this list, so
-            # popping the dict entry wouldn't stop queued turns from running.
-            queue = self.pending.get(channel)
-            if queue:
-                queue.clear()
-            self.stopped.add(channel)
-            running.cancel()
-            await self.transport.send(channel, "stopped.")
+        if command.lower() in {"stop", "cancel", "/stop"}:
+            await self._stop(channel)
+            return None
+        if command.lower().startswith("/bg") and command[3:4].isspace():
+            events.put(command[3:].strip())
+            await self.transport.send(channel, "started in the background.")
             return None
 
         # Enqueued here and nowhere else. If _drain also appended, a second message
@@ -91,6 +113,39 @@ class Dispatcher:
             if not task.done():
                 return channel
         return None
+
+    async def _stop(self, channel):
+        running = self.tasks.get(channel)
+        background = [task for task, run in self.background.items() if run.channel_id == channel]
+        if running and not running.done():
+            # Clear in place: the drain loop holds a reference to this list, so
+            # popping the dict entry wouldn't stop queued turns from running.
+            queue = self.pending.get(channel)
+            if queue:
+                queue.clear()
+            self.stopped.add(channel)
+            running.cancel()
+            if background:
+                await self.transport.send(channel, "stopped. Background runs are still going; send stop again to end them.")
+                return
+            await self.transport.send(channel, "stopped.")
+            return
+
+        if not background:
+            await self.transport.send(channel, "nothing running.")
+            return
+
+        # The row goes now: a cancelled run never reaches its own cleanup, and a row
+        # left behind is reported at the next boot as cut off by a restart.
+        stopped = []
+        for task in background:
+            run = self.background.pop(task)
+            task.cancel()
+            run.delete_instance()
+            stopped.append(f"- {_brief(run.instruction)}")
+            self.sessions.note(channel, f"The owner stopped this background run before it finished:\n\n{run.instruction}")
+        listed = "\n".join(stopped)
+        await self.transport.send(channel, f"stopped in the background:\n{listed}")
 
     async def _drain(self, channel):
         queue = self.pending.setdefault(channel, [])
@@ -111,10 +166,6 @@ class Dispatcher:
             self.sessions.reset(channel)
             await self.transport.send(channel, "fresh session.")
             return
-        if command.startswith("/bg") and command[3:4].isspace():
-            events.put(inbound.text.strip()[3:].strip())
-            await self.transport.send(channel, "started in the background.")
-            return
 
         session = self.sessions.get(channel)
         if command == "/retry" and not session.unanswered():
@@ -122,7 +173,7 @@ class Dispatcher:
             return
 
         resume.begin(channel)
-        slow = asyncio.create_task(self._slow_note(channel))
+        slow = asyncio.create_task(self._slow_note(channel, session))
         try:
             async with self.transport.typing(channel):
                 # /retry resumes from the last checkpoint, which already holds the
@@ -219,7 +270,12 @@ class Dispatcher:
         queue = self.pending.get(channel)
         if not queue:
             return "", None
-        inbounds, queue[:] = queue[:], []
+        # A command keeps its place in line and runs on its own once this turn ends;
+        # folded in here, the model would get it as plain text.
+        count = 0
+        while count < len(queue) and not _is_command(queue[count]):
+            count += 1
+        inbounds, queue[:] = queue[:count], queue[count:]
         texts, images = [], []
         for inbound in inbounds:
             text = inbound.text
@@ -232,13 +288,16 @@ class Dispatcher:
                 texts.append(text)
         return "\n\n".join(texts), images or None
 
-    async def _slow_note(self, channel):
+    async def _slow_note(self, channel, session):
         minutes = 1
         await asyncio.sleep(60)
         while True:
             question = ask.waiting.get(channel)
             if question:
                 await self.transport.send(channel, f"waiting on your answer: {question}")
+            elif session.running:
+                doing = ", ".join(_doing(call) for call in session.running)
+                await self.transport.send(channel, f"still working ({minutes}m), running {doing}.")
             else:
                 await self.transport.send(channel, f"still working ({minutes}m).")
             await asyncio.sleep(300)

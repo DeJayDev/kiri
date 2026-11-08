@@ -4,6 +4,16 @@ from kiri.engine import llm
 from kiri.tools.reload import Restart
 
 
+def _fail_on_early_stop(data):
+    # Without this a reply cut off at the output cap reaches the owner looking
+    # complete, and a refusal arrives as "(no output)".
+    reason = data.get("stop_reason")
+    if reason == "max_tokens":
+        raise RuntimeError("the reply hit the model's output limit and was cut off")
+    if reason == "refusal":
+        raise RuntimeError(f"the model refused to answer: {data.get('stop_details') or 'no reason given'}")
+
+
 async def run(
     session, user_text, registry, notify, images=None, nudges=None, persist=None, live=None
 ):
@@ -35,6 +45,7 @@ async def run(
                 registry.schemas(),
                 on_text=preview.feed if preview else None,
             )
+            _fail_on_early_stop(data)
         except BaseException:
             if preview:
                 await preview.close(None)
@@ -65,10 +76,12 @@ async def run(
             await notify(said)
 
         calls = [block for block in content if block.get("type") == "tool_use"]
+        session.running = calls
         outputs = await asyncio.gather(
             *(registry.run(block["name"], block.get("input", {})) for block in calls),
             return_exceptions=True,
         )
+        session.running = []
 
         results = []
         restart = None
