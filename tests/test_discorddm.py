@@ -142,21 +142,35 @@ def test_kiris_own_edited_messages_are_ignored(monkeypatch):
 
 class _Response:
     def __init__(self):
-        self.sent = []
+        self.deferred = []
 
-    async def send_message(self, text):
-        self.sent.append(text)
+    async def defer(self, ephemeral=False):
+        self.deferred.append(ephemeral)
 
 
-def _interaction(user_id):
-    return SimpleNamespace(user=SimpleNamespace(id=user_id), channel_id=9, response=_Response())
+class _Interaction:
+    def __init__(self, user_id):
+        self.user = SimpleNamespace(id=user_id)
+        self.response = _Response()
+        self.deleted = 0
+
+    async def delete_original_response(self):
+        self.deleted += 1
+
+
+def _owner_dm(transport):
+    async def owner_channel():
+        return 9
+
+    transport.owner_channel = owner_channel
 
 
 def test_skill_is_one_dm_only_command_that_runs_the_named_skill(monkeypatch):
     monkeypatch.setattr(config, "OWNER_ID", 7)
     transport = DiscordDM()
     received = _capture(transport._client)
-    interaction = _interaction(7)
+    _owner_dm(transport)
+    interaction = _Interaction(7)
 
     command = _slash(transport, "skill", "Run one of your skills by name.", "skill")
     asyncio.run(command.callback(interaction, name="wttr", message="london"))
@@ -164,8 +178,7 @@ def test_skill_is_one_dm_only_command_that_runs_the_named_skill(monkeypatch):
     assert command.allowed_contexts.dm_channel is True
     assert command.allowed_contexts.guild is not True
     assert [(p.name, p.required, p.autocomplete) for p in command.parameters] == [("name", True, True), ("message", False, False)]
-    assert interaction.response.sent == ["/wttr london"]
-    assert [inbound.text for inbound in received] == ["/wttr london"]
+    assert [(inbound.channel_id, inbound.text) for inbound in received] == [(9, "/wttr london")]
 
 
 def test_skill_names_autocomplete_from_the_catalog(monkeypatch):
@@ -174,6 +187,21 @@ def test_skill_names_autocomplete_from_the_catalog(monkeypatch):
     choices = asyncio.run(_skill_names(None, "WT"))
 
     assert [(choice.name, choice.value) for choice in choices] == [("wttr: Get weather.", "wttr")]
+
+
+def test_stop_and_new_ack_without_echoing_the_command(monkeypatch):
+    monkeypatch.setattr(config, "OWNER_ID", 7)
+    transport = DiscordDM()
+    received = _capture(transport._client)
+    _owner_dm(transport)
+    interaction = _Interaction(7)
+
+    asyncio.run(_slash(transport, "stop", "Stop the running turn.", None).callback(interaction))
+    asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
+
+    assert interaction.response.deferred == [True, True]
+    assert interaction.deleted == 2
+    assert [inbound.text for inbound in received] == ["/stop", "/new"]
 
 
 def test_bg_needs_its_prompt_and_stop_takes_nothing():
@@ -190,9 +218,9 @@ def test_a_command_from_anyone_but_the_owner_does_nothing(monkeypatch):
     monkeypatch.setattr(config, "OWNER_ID", 7)
     transport = DiscordDM()
     received = _capture(transport._client)
-    interaction = _interaction(8)
+    interaction = _Interaction(8)
 
     asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
 
-    assert interaction.response.sent == []
+    assert interaction.response.deferred == []
     assert received == []

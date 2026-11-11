@@ -187,9 +187,11 @@ def _slash(transport, command, description, argument):
         if interaction.user.id != config.OWNER_ID:
             return
         # Discord shows "the application did not respond" unless the interaction is
-        # answered within 3 seconds, so answer first and run after.
-        await interaction.response.send_message(text[:_LIMIT])
-        await transport._on_message(Inbound(channel_id=interaction.channel_id, text=text))
+        # answered within 3 seconds. The deferred reply stays as "thinking..." until
+        # it is deleted.
+        await interaction.response.defer(ephemeral=True)
+        await transport._on_message(Inbound(channel_id=await transport.owner_channel(), text=text))
+        await interaction.delete_original_response()
 
     async def bare(interaction: discord.Interaction):
         await invoke(interaction, f"/{command}")
