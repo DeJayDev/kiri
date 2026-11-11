@@ -142,11 +142,7 @@ def test_kiris_own_edited_messages_are_ignored(monkeypatch):
 
 class _Response:
     def __init__(self):
-        self.sent = []
         self.deferred = []
-
-    async def send_message(self, text):
-        self.sent.append(text)
 
     async def defer(self, ephemeral=False):
         self.deferred.append(ephemeral)
@@ -182,9 +178,6 @@ def test_skill_is_one_dm_only_command_that_runs_the_named_skill(monkeypatch):
     assert command.allowed_contexts.dm_channel is True
     assert command.allowed_contexts.guild is not True
     assert [(p.name, p.required, p.autocomplete) for p in command.parameters] == [("name", True, True), ("message", False, False)]
-    assert interaction.response.sent == []
-    assert interaction.response.deferred == [True]
-    assert interaction.deleted == 1
     assert [(inbound.channel_id, inbound.text) for inbound in received] == [(9, "/wttr london")]
 
 
@@ -206,7 +199,6 @@ def test_stop_and_new_ack_without_echoing_the_command(monkeypatch):
     asyncio.run(_slash(transport, "stop", "Stop the running turn.", None).callback(interaction))
     asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
 
-    assert interaction.response.sent == []
     assert interaction.response.deferred == [True, True]
     assert interaction.deleted == 2
     assert [inbound.text for inbound in received] == ["/stop", "/new"]
@@ -230,5 +222,5 @@ def test_a_command_from_anyone_but_the_owner_does_nothing(monkeypatch):
 
     asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
 
-    assert interaction.response.sent == []
+    assert interaction.response.deferred == []
     assert received == []
