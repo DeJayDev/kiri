@@ -182,23 +182,16 @@ async def _skill_names(interaction, current):
     ][:25]
 
 
-def _channel_id(interaction):
-    # channel_id is None until the channel object exists, and a DM interaction can
-    # arrive before that. The raw payload always carries the channel.
-    if interaction.channel_id is not None:
-        return interaction.channel_id
-    return int(interaction.data["channel"]["id"])
-
-
 def _slash(transport, command, description, argument):
     async def invoke(interaction, text):
         if interaction.user.id != config.OWNER_ID:
             return
         # Discord shows "the application did not respond" unless the interaction is
-        # answered within 3 seconds. A deferred reply with no content is the ack;
-        # posting the command text makes /stop and /new look like they only echoed.
+        # answered within 3 seconds. The deferred reply stays as "thinking..." until
+        # it is deleted.
         await interaction.response.defer(ephemeral=True)
-        await transport._on_message(Inbound(channel_id=_channel_id(interaction), text=text))
+        await transport._on_message(Inbound(channel_id=await transport.owner_channel(), text=text))
+        await interaction.delete_original_response()
 
     async def bare(interaction: discord.Interaction):
         await invoke(interaction, f"/{command}")

@@ -5,7 +5,7 @@ import discord
 
 from kiri import config
 from kiri.skills import catalog
-from kiri.transports.discorddm import DiscordDM, _channel_id, _skill_names, _slash
+from kiri.transports.discorddm import DiscordDM, _skill_names, _slash
 
 BOT = SimpleNamespace(name="kiri")
 OWNER = SimpleNamespace(name="owner")
@@ -152,20 +152,29 @@ class _Response:
         self.deferred.append(ephemeral)
 
 
-def _interaction(user_id, channel_id=9):
-    return SimpleNamespace(
-        user=SimpleNamespace(id=user_id),
-        channel_id=channel_id,
-        data={},
-        response=_Response(),
-    )
+class _Interaction:
+    def __init__(self, user_id):
+        self.user = SimpleNamespace(id=user_id)
+        self.response = _Response()
+        self.deleted = 0
+
+    async def delete_original_response(self):
+        self.deleted += 1
+
+
+def _owner_dm(transport):
+    async def owner_channel():
+        return 9
+
+    transport.owner_channel = owner_channel
 
 
 def test_skill_is_one_dm_only_command_that_runs_the_named_skill(monkeypatch):
     monkeypatch.setattr(config, "OWNER_ID", 7)
     transport = DiscordDM()
     received = _capture(transport._client)
-    interaction = _interaction(7)
+    _owner_dm(transport)
+    interaction = _Interaction(7)
 
     command = _slash(transport, "skill", "Run one of your skills by name.", "skill")
     asyncio.run(command.callback(interaction, name="wttr", message="london"))
@@ -175,7 +184,8 @@ def test_skill_is_one_dm_only_command_that_runs_the_named_skill(monkeypatch):
     assert [(p.name, p.required, p.autocomplete) for p in command.parameters] == [("name", True, True), ("message", False, False)]
     assert interaction.response.sent == []
     assert interaction.response.deferred == [True]
-    assert [inbound.text for inbound in received] == ["/wttr london"]
+    assert interaction.deleted == 1
+    assert [(inbound.channel_id, inbound.text) for inbound in received] == [(9, "/wttr london")]
 
 
 def test_skill_names_autocomplete_from_the_catalog(monkeypatch):
@@ -186,24 +196,19 @@ def test_skill_names_autocomplete_from_the_catalog(monkeypatch):
     assert [(choice.name, choice.value) for choice in choices] == [("wttr: Get weather.", "wttr")]
 
 
-def test_a_dm_slash_uses_the_raw_channel_when_the_object_is_missing():
-    interaction = _interaction(7, channel_id=None)
-    interaction.data = {"channel": {"id": "42"}}
-
-    assert _channel_id(interaction) == 42
-
-
 def test_stop_and_new_ack_without_echoing_the_command(monkeypatch):
     monkeypatch.setattr(config, "OWNER_ID", 7)
     transport = DiscordDM()
     received = _capture(transport._client)
-    interaction = _interaction(7)
+    _owner_dm(transport)
+    interaction = _Interaction(7)
 
     asyncio.run(_slash(transport, "stop", "Stop the running turn.", None).callback(interaction))
     asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
 
     assert interaction.response.sent == []
     assert interaction.response.deferred == [True, True]
+    assert interaction.deleted == 2
     assert [inbound.text for inbound in received] == ["/stop", "/new"]
 
 
@@ -221,7 +226,7 @@ def test_a_command_from_anyone_but_the_owner_does_nothing(monkeypatch):
     monkeypatch.setattr(config, "OWNER_ID", 7)
     transport = DiscordDM()
     received = _capture(transport._client)
-    interaction = _interaction(8)
+    interaction = _Interaction(8)
 
     asyncio.run(_slash(transport, "new", "Start a fresh conversation.", None).callback(interaction))
 
